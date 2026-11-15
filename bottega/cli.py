@@ -1,7 +1,10 @@
 """Command-line interface.
 
-Phase 1:  python -m bottega solo researcher "Build a landing page for a pizzeria in Mantova, Italy"
-Phase 2+: python -m bottega run "goal"   (the whole company)
+    python -m bottega serve            # the command center dashboard
+    python -m bottega serve --demo     # same, with scripted responses (no API key, no cost)
+    python -m bottega solo researcher "Build a landing page for a pizzeria in Mantova, Italy"
+
+Phase 2+ adds: python -m bottega run "goal"   (the whole company, in the terminal)
 """
 
 from __future__ import annotations
@@ -9,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 
 import anthropic
@@ -16,6 +20,7 @@ import anthropic
 from bottega.agents import ROLES, AgentError, build_agent
 from bottega.config import Settings
 from bottega.costs import CostTracker
+from bottega.errors import explain
 from bottega.events import Event
 from bottega.memory import MemoryVault
 from bottega.tools import Workspace, new_project_id
@@ -32,6 +37,8 @@ _ICONS = {
 
 def print_event(event: Event) -> None:
     """CLI event listener: one readable line per event."""
+    if event.kind == "usage":
+        return  # cost ticks are for the dashboard; the CLI prints a summary at the end
     icon = _ICONS.get(event.kind, "•")
     d = event.data
     if event.kind == "agent_start":
@@ -69,7 +76,7 @@ def cmd_solo(args: argparse.Namespace, settings: Settings) -> int:
     try:
         result = agent.run(f"Client goal: {args.goal}")
     except AgentError as exc:
-        print(f"\nAgent failed: {exc}", file=sys.stderr)
+        print(f"\nAgent failed: {explain(exc)}", file=sys.stderr)
         return 1
 
     print(f"\nFiles in {workspace.root}:")
@@ -86,7 +93,41 @@ def cmd_solo(args: argparse.Namespace, settings: Settings) -> int:
             f"\n{name}: {spend.calls} API calls, {u.input_tokens} in / {u.output_tokens} out "
             f"tokens (cache read {u.cache_read_tokens}), ${spend.cost_usd:.4f}"
         )
+    if not result.completed:
+        print(f"\nNot finished: {result.final_text}", file=sys.stderr)
     return 0 if result.completed else 2
+
+
+def cmd_serve(args: argparse.Namespace, settings: Settings) -> int:
+    # Imported here so `solo` keeps working even if the web extras are missing.
+    try:
+        import uvicorn
+
+        from bottega.company import Company
+        from bottega.web import EventHub, create_app
+    except ImportError as exc:
+        print(f"The dashboard needs FastAPI and uvicorn ({exc}).\n"
+              "Install them with: pip install -r requirements.txt", file=sys.stderr)
+        return 1
+
+    hub = EventHub()
+    if args.demo:
+        from bottega.demo import DemoClient, demo_settings
+
+        company = Company(demo_settings(settings), publish=hub.publish,
+                          client_factory=DemoClient, demo=True)
+        print("DEMO MODE: scripted responses, no API calls, nothing is billed.")
+    else:
+        company = Company(settings, publish=hub.publish)
+        if not os.getenv("ANTHROPIC_API_KEY"):
+            print("Warning: ANTHROPIC_API_KEY is not set. Projects will fail until you add it "
+                  "to .env (or use --demo to explore the dashboard for free).", file=sys.stderr)
+
+    shown_host = "localhost" if args.host in ("127.0.0.1", "0.0.0.0") else args.host
+    print(f"Bottega command center: http://{shown_host}:{args.port}   (Ctrl+C to stop)")
+    uvicorn.run(create_app(company, hub), host=args.host, port=args.port,
+                log_level="warning", timeout_graceful_shutdown=2)
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -98,6 +139,14 @@ def build_parser() -> argparse.ArgumentParser:
     solo.add_argument("role", choices=sorted(ROLES), help="which agent to run")
     solo.add_argument("goal", help='e.g. "Build a landing page for a pizzeria in Mantova, Italy"')
     solo.set_defaults(func=cmd_solo)
+
+    serve = sub.add_parser("serve", help="start the command center dashboard")
+    serve.add_argument("--demo", action="store_true",
+                       help="scripted responses: no API key needed, nothing is billed")
+    serve.add_argument("--host", default="127.0.0.1",
+                       help="address to listen on (default: this computer only)")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.set_defaults(func=cmd_serve)
     return parser
 
 
@@ -115,13 +164,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return args.func(args, settings)
-    except anthropic.AuthenticationError:
-        print("Authentication failed: set ANTHROPIC_API_KEY in your .env file.", file=sys.stderr)
-    except anthropic.APIConnectionError:
-        print("Could not reach the Claude API. Check your internet connection.", file=sys.stderr)
-    except anthropic.APIStatusError as exc:
-        print(f"Claude API error {exc.status_code}: {exc.message}", file=sys.stderr)
+    except anthropic.AnthropicError as exc:
+        print(explain(exc), file=sys.stderr)
+        return 1
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         return 130
-    return 1

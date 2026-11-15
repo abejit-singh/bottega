@@ -38,6 +38,18 @@ _WORD = re.compile(r"[a-zà-ÿ0-9]+")
 
 
 @dataclass(frozen=True)
+class NoteInfo:
+    """What the dashboard shows for a note without opening it."""
+
+    path: str
+    title: str
+    folder: str  # "" for notes at the top level of the vault
+    tags: tuple[str, ...]
+    author: str
+    updated: str
+
+
+@dataclass(frozen=True)
 class SearchHit:
     path: str
     title: str
@@ -60,6 +72,11 @@ def _split_frontmatter(text: str) -> tuple[str, str]:
     return match.group(1), text[match.end():]
 
 
+def _parse_field(frontmatter: str, name: str) -> str:
+    match = re.search(rf"^{name}:\s*(.+?)\s*$", frontmatter, re.MULTILINE)
+    return match.group(1) if match else ""
+
+
 def _parse_tags(frontmatter: str) -> tuple[str, ...]:
     match = _TAGS_LINE.search(frontmatter)
     if not match:
@@ -79,6 +96,22 @@ class MemoryVault:
         """All notes, ignoring Obsidian's own config folder."""
         return [p for p in self.workspace.list_files()
                 if p.endswith(".md") and not p.startswith(".obsidian/")]
+
+    def notes(self) -> list[NoteInfo]:
+        """Metadata for every note, read from each file's frontmatter."""
+        infos = []
+        for rel in self.list_notes():
+            frontmatter, _ = _split_frontmatter(self.workspace.read_text(rel))
+            path = Path(rel)
+            infos.append(NoteInfo(
+                path=rel,
+                title=path.stem,
+                folder=path.parent.as_posix() if path.parent.as_posix() != "." else "",
+                tags=_parse_tags(frontmatter),
+                author=_parse_field(frontmatter, "author"),
+                updated=_parse_field(frontmatter, "updated"),
+            ))
+        return infos
 
     def read(self, note: str) -> str:
         """Read a note by relative path ('playbooks/Landing page checklist.md')

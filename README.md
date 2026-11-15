@@ -4,10 +4,12 @@
 
 **A company run entirely by AI agents.** Give Bottega a goal, for example *"Build a landing page for a pizzeria in Mantova, Italy"*, and a team of specialized Claude agents (CEO, Researcher, Designer, Developer, Marketer, QA) splits it into tasks, collaborates through a shared task board and delivers real output: research, a design system, working HTML/CSS/JS, marketing copy.
 
-> 🚧 **Status: Phase 1 of 5.** A single agent (the Researcher) works end to end. See the [roadmap](#roadmap).
+> 🚧 **Status: work in progress.** One agent (the Researcher) works end to end, with company memory and a live command center. The other five agents join in the next phases. See the [roadmap](#roadmap).
 
-<!-- TODO: replace with a real recording once the dashboard exists (phase 4) -->
-![Demo GIF placeholder](docs/demo.gif)
+<!-- TODO: replace with a screen recording (GIF) of a real run -->
+![The Bottega command center during a demo run](docs/dashboard.png)
+
+*The command center in demo mode: one agent on duty, five seats waiting for the next phases.*
 
 ---
 
@@ -58,6 +60,25 @@ sequenceDiagram
 
 An agent = **system prompt + allowed tools + this loop**. All six roles share one `Agent` class (`bottega/agents/base.py`); a role is just a prompt file plus a list of tool names (`bottega/agents/roles.py`).
 
+### The command center
+
+`python -m bottega serve` starts a local web dashboard: give the company a goal, watch each agent work, read what it delivers, follow the cost, and stop a project at any time.
+
+```mermaid
+flowchart LR
+    A[Agent loop<br/>worker thread] -- "Event (text, tool call, usage…)" --> CO[Company<br/>projects · status · spend]
+    CO -- "publish()" --> H[EventHub<br/>numbered history]
+    H -- "Server-Sent Events" --> B[Browser]
+    B -- "GET api/state (snapshot)" --> S[FastAPI]
+    B -- "POST api/projects · stop" --> S
+    S --> CO
+```
+
+- **Events are signals, the snapshot is truth.** Each event adds a line to the live feed and tells the page "something changed"; the page then re-fetches one JSON snapshot. Totals are never rebuilt from events in the browser, so they cannot drift.
+- **Threads meet async in one place.** Agents run in worker threads (the agent loop blocks on the network), the web server is async. `EventHub.publish()` bridges the two with `loop.call_soon_threadsafe`.
+- **Nothing is lost on reconnect.** Events are numbered; the browser says which one it saw last and receives the rest. If a proxy blocks the stream, the page falls back to polling.
+- **Demo mode** (`--demo`) replaces the Claude API with a scripted client and runs the real agent loop, tools and dashboard on top of it: no key, no cost, same result every time.
+
 ### Company memory 🧠
 
 Bottega has two kinds of memory:
@@ -77,18 +98,25 @@ bottega/
 ├── bottega/
 │   ├── cli.py              # `python -m bottega ...`
 │   ├── config.py           # typed settings from .env
+│   ├── company.py          # Company: owns projects, runs agents in the background
 │   ├── costs.py            # pricing table + per-agent cost tracking
-│   ├── events.py           # events emitted by agents (CLI now, dashboard later)
+│   ├── demo.py             # scripted stand-in for the Claude API (--demo)
+│   ├── errors.py           # exceptions -> messages a human can act on
+│   ├── events.py           # events emitted by agents (CLI and dashboard listen)
 │   ├── sandbox.py          # Workspace: confines every path to one folder
 │   ├── memory/vault.py     # company memory: Obsidian vault, keyword search
 │   ├── agents/
 │   │   ├── base.py         # the tool-use loop
 │   │   ├── roles.py        # role registry (prompt + allowed tools)
 │   │   └── prompts/        # one markdown system prompt per role
-│   └── tools/
-│       ├── base.py         # Tool type + input validation
-│       ├── files.py        # write_file, read_file, list_files
-│       └── memory_tools.py # search_memory, read_memory, save_memory
+│   ├── tools/
+│   │   ├── base.py         # Tool type + input validation
+│   │   ├── files.py        # write_file, read_file, list_files
+│   │   └── memory_tools.py # search_memory, read_memory, save_memory
+│   └── web/
+│       ├── hub.py          # EventHub: thread-safe pub/sub with replay
+│       ├── server.py       # FastAPI: JSON API + Server-Sent Events
+│       └── static/         # the dashboard: index.html, style.css, app.js
 ├── memory/                 # the company's Obsidian vault (committed)
 └── tests/                  # offline tests using a fake Claude client
 ```
@@ -108,7 +136,16 @@ pip install -r requirements-dev.txt
 cp .env.example .env        # then put your key in .env (never commit it)
 ```
 
-**Run one agent (phase 1):**
+**Open the command center:**
+
+```bash
+python -m bottega serve --demo    # explore the dashboard: no API key, nothing is billed
+python -m bottega serve           # the real thing (needs your key in .env)
+```
+
+Then open <http://localhost:8000>. The dashboard has no login, so by default it only listens on your own computer.
+
+**Or run one agent in the terminal:**
 
 ```bash
 python -m bottega solo researcher "Build a landing page for a pizzeria in Mantova, Italy"
@@ -134,6 +171,7 @@ All settings live in `.env` (see [`.env.example`](.env.example)):
 | `BOTTEGA_EFFORT` | `medium` | Thinking depth: `low` … `max` (higher = better and pricier) |
 | `BOTTEGA_MAX_TOKENS` | `32000` | Max output tokens per API call |
 | `BOTTEGA_MAX_TURNS` | `25` | Max API calls per agent per task |
+| `BOTTEGA_MAX_COST_USD` | `1.00` | A project stops by itself once it has spent this much |
 | `BOTTEGA_OUTPUT_DIR` | `output` | Where projects are written |
 | `BOTTEGA_MEMORY_DIR` | `memory` | Company memory (Obsidian vault) |
 | `BOTTEGA_REFUSAL_FALLBACK` | `true` | If the model declines, retry server-side on a fallback model |
@@ -164,6 +202,10 @@ Project 20261115-213000-build-a-landing-page-for-a-pizzeria-in-m  |  model claud
 - **Prompt caching** on the system prompt + tools, which are resent on every turn of the loop.
 - **Memory as Markdown files, not a database**, so humans (in Obsidian) and agents (through tools) share one source of truth. Search is plain keyword scoring: no extra dependencies and easy to debug. Semantic search with embeddings could replace it later behind the same `search()` function.
 - **Cost priced by `response.model`**, not the configured model, because a refusal fallback may have served the call. Unknown models are priced conservatively.
+- **Limits are checked between model calls.** The budget and the Stop button take effect before the *next* call, after the tools of the current one have run, so a file an agent was writing is never lost.
+- **Server-Sent Events instead of WebSockets.** Updates only flow from server to browser, and SSE is plain HTTP with automatic reconnection built into the browser.
+- **No frontend framework, no build step.** The dashboard is three static files. Everything agents write is inserted with `textContent`, never `innerHTML`, so model output cannot inject markup into the page.
+- **The core knows nothing about the web.** `Company` reports progress through a `publish` function it is handed; the server passes its event hub, the tests pass `list.append`.
 
 ---
 
@@ -171,10 +213,11 @@ Project 20261115-213000-build-a-landing-page-for-a-pizzeria-in-m  |  model claud
 
 - [x] **Phase 1:** project structure, config, base `Agent`, sandboxed file tools, cost tracking, one agent (Researcher)
 - [x] **Phase 1.5:** company memory (Obsidian vault + search/read/save tools)
+- [x] **Command center** (moved up from phase 4): FastAPI + Server-Sent Events dashboard, demo mode, Stop button, $1 budget per project
 - [ ] **Phase 2:** orchestrator, task board, message log, `project_brief.json`, CEO delegating to 2 agents
 - [ ] **Phase 3:** all 6 agents + QA revision loop (max 2 revisions)
-- [ ] **Phase 4:** FastAPI + Server-Sent Events live dashboard
-- [ ] **Phase 5:** error handling, retries, $1 cost limit per run, orchestrator tests
+- [ ] **Phase 4:** dashboard for the whole team: task board (kanban) and agent-to-agent messages
+- [ ] **Phase 5:** retries, project history that survives a restart, orchestrator tests
 
 ---
 

@@ -31,6 +31,16 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number, got {raw!r}") from exc
+
+
 def _env_int(name: str, default: int) -> int:
     raw = os.getenv(name)
     if raw is None or raw.strip() == "":
@@ -50,6 +60,8 @@ class Settings:
     max_tokens: int = 32_000
     # Safety valve: maximum model calls an agent may make for one task.
     max_turns: int = 25
+    # Safety valve: stop a project once it has spent this many dollars.
+    max_cost_usd: float = 1.00
     output_dir: Path = Path("output")
     # Company memory: an Obsidian vault that persists across projects.
     memory_dir: Path = Path("memory")
@@ -62,6 +74,8 @@ class Settings:
             raise ValueError(f"BOTTEGA_EFFORT must be one of {VALID_EFFORTS}, got {self.effort!r}")
         if self.max_tokens <= 0 or self.max_turns <= 0:
             raise ValueError("BOTTEGA_MAX_TOKENS and BOTTEGA_MAX_TURNS must be positive")
+        if self.max_cost_usd <= 0:
+            raise ValueError("BOTTEGA_MAX_COST_USD must be positive")
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -72,6 +86,7 @@ class Settings:
             effort=os.getenv("BOTTEGA_EFFORT", cls.effort),
             max_tokens=_env_int("BOTTEGA_MAX_TOKENS", cls.max_tokens),
             max_turns=_env_int("BOTTEGA_MAX_TURNS", cls.max_turns),
+            max_cost_usd=_env_float("BOTTEGA_MAX_COST_USD", cls.max_cost_usd),
             output_dir=Path(os.getenv("BOTTEGA_OUTPUT_DIR", str(cls.output_dir))),
             memory_dir=Path(os.getenv("BOTTEGA_MEMORY_DIR", str(cls.memory_dir))),
             refusal_fallback=_env_bool("BOTTEGA_REFUSAL_FALLBACK", cls.refusal_fallback),

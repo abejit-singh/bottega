@@ -13,7 +13,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-EventKind = Literal["agent_start", "text", "tool_call", "tool_result", "agent_done", "error"]
+EventKind = Literal[
+    "agent_start", "text", "tool_call", "tool_result", "usage", "agent_done", "error"
+]
 
 
 @dataclass(frozen=True)

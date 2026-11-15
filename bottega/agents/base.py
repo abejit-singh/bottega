@@ -19,6 +19,7 @@ agents work — which is the point of this project.
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -45,7 +46,9 @@ class AgentError(Exception):
 class AgentResult:
     agent: str
     final_text: str
-    stop_reason: str  # "end_turn", "max_tokens", "max_turns", ...
+    # "end_turn" = finished normally. Others: "max_tokens", "max_turns",
+    # "cancelled" (stop button), "budget_exceeded" (cost limit).
+    stop_reason: str
     turns: int
     files_written: list[str] = field(default_factory=list)
     cost_usd: float = 0.0
@@ -67,6 +70,7 @@ class Agent:
         workspace: Workspace,
         costs: CostTracker,
         memory: MemoryVault | None = None,
+        cancel: threading.Event | None = None,
         on_event: EventHandler = ignore_event,
     ) -> None:
         self.name = name
@@ -77,6 +81,9 @@ class Agent:
         self.workspace = workspace
         self.costs = costs
         self.memory = memory
+        # A flag another thread can set to ask this agent to stop (the dashboard's
+        # Stop button). threading.Event is the standard thread-safe way to do that.
+        self.cancel = cancel
         self.on_event = on_event
 
     # ------------------------------------------------------------------ public
@@ -90,8 +97,16 @@ class Agent:
         cost_usd = 0.0
 
         for turn in range(1, self.settings.max_turns + 1):
+            # Safety checks run *between* model calls. Tools requested in the
+            # previous turn have already run, so finished work is never lost.
+            stop = self._should_stop()
+            if stop is not None:
+                reason, message = stop
+                return self._finish(reason, message, turn - 1, ctx, cost_usd)
+
             response = self._call_model(messages)
             cost_usd += self.costs.record(self.name, response.model, response.usage)
+            self._emit("usage", turn=turn, cost_usd=cost_usd)
 
             # Append Claude's reply *unchanged* (including thinking blocks): the
             # API needs them back on the next call to keep its reasoning valid.
@@ -113,16 +128,10 @@ class Agent:
             tool_uses = [b for b in response.content if b.type == "tool_use"]
             if not tool_uses:
                 # No tool calls means Claude considers the task finished.
-                result = AgentResult(
-                    agent=self.name,
-                    final_text=_joined_text(response.content),
-                    stop_reason=response.stop_reason or "unknown",
-                    turns=turn,
-                    files_written=list(ctx.files_written),
-                    cost_usd=cost_usd,
+                return self._finish(
+                    response.stop_reason or "unknown",
+                    _joined_text(response.content), turn, ctx, cost_usd,
                 )
-                self._emit("agent_done", stop_reason=result.stop_reason, cost_usd=cost_usd)
-                return result
 
             if response.stop_reason == "max_tokens":
                 # The reply was cut off mid tool call, so its input is incomplete.
@@ -140,17 +149,36 @@ class Agent:
             messages.append({"role": "user", "content": tool_results})
 
         logger.warning("%s hit max_turns=%d", self.name, self.settings.max_turns)
-        self._emit("agent_done", stop_reason="max_turns", cost_usd=cost_usd)
-        return AgentResult(
-            agent=self.name,
-            final_text="Stopped: reached the maximum number of turns.",
-            stop_reason="max_turns",
-            turns=self.settings.max_turns,
-            files_written=list(ctx.files_written),
-            cost_usd=cost_usd,
+        return self._finish(
+            "max_turns", "Stopped: reached the maximum number of turns.",
+            self.settings.max_turns, ctx, cost_usd,
         )
 
     # ----------------------------------------------------------------- helpers
+
+    def _should_stop(self) -> tuple[str, str] | None:
+        """Return (stop_reason, message) if the agent must stop now, else None."""
+        if self.cancel is not None and self.cancel.is_set():
+            return "cancelled", "Stopped by the user."
+        # The tracker is shared by every agent on a project, so this is a
+        # per-project budget: a runaway loop can't quietly burn your credits.
+        if self.costs.total_usd >= self.settings.max_cost_usd:
+            limit = self.settings.max_cost_usd
+            return "budget_exceeded", f"Stopped: the ${limit:.2f} budget for this project is used up."
+        return None
+
+    def _finish(self, stop_reason: str, final_text: str, turns: int,
+                ctx: ToolContext, cost_usd: float) -> AgentResult:
+        """Every exit from the loop goes through here, so `agent_done` is always emitted."""
+        self._emit("agent_done", stop_reason=stop_reason, cost_usd=cost_usd)
+        return AgentResult(
+            agent=self.name,
+            final_text=final_text,
+            stop_reason=stop_reason,
+            turns=turns,
+            files_written=list(ctx.files_written),
+            cost_usd=cost_usd,
+        )
 
     def _call_model(self, messages: list[dict[str, Any]]) -> Any:
         """One call to the Messages API. Returns the final BetaMessage."""

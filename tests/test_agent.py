@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from bottega.agents import AgentError, build_agent
@@ -39,7 +41,9 @@ def test_agent_writes_file_then_finishes(settings, workspace, costs) -> None:
     assert result.cost_usd == pytest.approx(2 * (1000 * 2 + 500 * 10) / 1e6)
     assert costs.by_agent()["Researcher"].calls == 2
     assert [e.kind for e in events] == [
-        "agent_start", "text", "tool_call", "tool_result", "text", "agent_done"
+        "agent_start",
+        "usage", "text", "tool_call", "tool_result",  # turn 1
+        "usage", "text", "agent_done",                # turn 2
     ]
 
 
@@ -116,3 +120,31 @@ def test_fallback_can_be_disabled(workspace, costs, tmp_path) -> None:
     settings = Settings(output_dir=tmp_path, refusal_fallback=False)
     _researcher(client, settings, workspace, costs).run("task")
     assert "fallbacks" not in client.requests[0] and "betas" not in client.requests[0]
+
+
+def test_cancel_stops_before_calling_the_model(settings, workspace, costs) -> None:
+    client = FakeClient([])  # would raise if the agent called the model
+    cancel = threading.Event()
+    cancel.set()
+    agent = build_agent("researcher", client=client, settings=settings, workspace=workspace,
+                        costs=costs, cancel=cancel)
+    result = agent.run("task")
+    assert result.stop_reason == "cancelled" and result.turns == 0
+    assert client.requests == []
+
+
+def test_budget_stops_the_loop_but_keeps_finished_work(workspace, costs, tmp_path) -> None:
+    # Each scripted call costs $0.007, so a $0.01 budget is exceeded after call 2.
+    settings = Settings(output_dir=tmp_path, max_cost_usd=0.01)
+    calls = [
+        make_message([tool_use("write_file", {"path": f"f{i}.md", "content": "x"}, f"t{i}")],
+                     stop_reason="tool_use")
+        for i in range(5)
+    ]
+    client = FakeClient(calls)
+    result = _researcher(client, settings, workspace, costs).run("task")
+
+    assert result.stop_reason == "budget_exceeded"
+    assert len(client.requests) == 2  # no third call was made
+    # The file requested in the call that crossed the limit was still written.
+    assert workspace.list_files() == ["f0.md", "f1.md"]
