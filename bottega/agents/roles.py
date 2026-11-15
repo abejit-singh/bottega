@@ -17,6 +17,7 @@ from bottega.agents.base import Agent
 from bottega.config import Settings
 from bottega.costs import CostTracker
 from bottega.events import EventHandler, ignore_event
+from bottega.memory import MemoryVault
 from bottega.tools import TOOL_REGISTRY, Workspace
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -36,7 +37,10 @@ ROLES: dict[str, AgentSpec] = {
     "researcher": AgentSpec(
         name="researcher",
         title="Researcher",
-        tool_names=("write_file", "read_file", "list_files"),
+        tool_names=(
+            "write_file", "read_file", "list_files",
+            "search_memory", "read_memory", "save_memory",
+        ),
     ),
     # Phase 2+: ceo, designer, developer, marketer, qa
 }
@@ -49,6 +53,7 @@ def build_agent(
     settings: Settings,
     workspace: Workspace,
     costs: CostTracker,
+    memory: MemoryVault | None = None,
     on_event: EventHandler = ignore_event,
 ) -> Agent:
     try:
@@ -63,5 +68,6 @@ def build_agent(
         settings=settings,
         workspace=workspace,
         costs=costs,
+        memory=memory,
         on_event=on_event,
     )

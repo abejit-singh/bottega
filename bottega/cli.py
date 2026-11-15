@@ -17,6 +17,7 @@ from bottega.agents import ROLES, AgentError, build_agent
 from bottega.config import Settings
 from bottega.costs import CostTracker
 from bottega.events import Event
+from bottega.memory import MemoryVault
 from bottega.tools import Workspace, new_project_id
 
 _ICONS = {
@@ -53,12 +54,15 @@ def cmd_solo(args: argparse.Namespace, settings: Settings) -> int:
     project_id = new_project_id(args.goal)
     workspace = Workspace(settings.output_dir / project_id)
     costs = CostTracker()
+    memory = MemoryVault(settings.memory_dir)
+    notes_before = set(memory.list_notes())
     agent = build_agent(
         args.role,
         client=anthropic.Anthropic(),  # reads ANTHROPIC_API_KEY from the environment
         settings=settings,
         workspace=workspace,
         costs=costs,
+        memory=memory,
         on_event=print_event,
     )
     print(f"Project {project_id}  |  model {settings.model}  |  effort {settings.effort}\n")
@@ -71,6 +75,11 @@ def cmd_solo(args: argparse.Namespace, settings: Settings) -> int:
     print(f"\nFiles in {workspace.root}:")
     for path in workspace.list_files():
         print(f"  - {path}")
+    new_notes = sorted(set(memory.list_notes()) - notes_before)
+    if new_notes:
+        print(f"\nNew notes in company memory ({memory.root}):")
+        for note in new_notes:
+            print(f"  + {note}")
     for name, spend in costs.by_agent().items():
         u = spend.usage
         print(

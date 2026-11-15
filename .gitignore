@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 
+# Obsidian app settings (the notes themselves ARE committed)
+.obsidian/
+
 # Generated projects
 output/*
 !output/.gitkeep

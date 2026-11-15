@@ -51,6 +51,8 @@ class Settings:
     # Safety valve: maximum model calls an agent may make for one task.
     max_turns: int = 25
     output_dir: Path = Path("output")
+    # Company memory: an Obsidian vault that persists across projects.
+    memory_dir: Path = Path("memory")
     # When Claude's safety classifiers decline a request, let the API retry it
     # on a fallback model inside the same call instead of failing the run.
     refusal_fallback: bool = True
@@ -71,5 +73,6 @@ class Settings:
             max_tokens=_env_int("BOTTEGA_MAX_TOKENS", cls.max_tokens),
             max_turns=_env_int("BOTTEGA_MAX_TURNS", cls.max_turns),
             output_dir=Path(os.getenv("BOTTEGA_OUTPUT_DIR", str(cls.output_dir))),
+            memory_dir=Path(os.getenv("BOTTEGA_MEMORY_DIR", str(cls.memory_dir))),
             refusal_fallback=_env_bool("BOTTEGA_REFUSAL_FALLBACK", cls.refusal_fallback),
         )

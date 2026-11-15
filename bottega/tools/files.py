@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from bottega.tools.base import Tool, ToolContext, ToolError
-from bottega.tools.workspace import SandboxError
+from bottega.sandbox import SandboxError
 
 
 def _write_file(ctx: ToolContext, args: dict[str, Any]) -> str:

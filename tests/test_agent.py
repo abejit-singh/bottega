@@ -105,7 +105,9 @@ def test_request_shape(settings, workspace, costs) -> None:
     assert req["model"] == "claude-sonnet-5-5"
     assert req["output_config"] == {"effort": "medium"}
     assert req["system"][0]["cache_control"] == {"type": "ephemeral"}
-    assert {t["name"] for t in req["tools"]} == {"write_file", "read_file", "list_files"}
+    assert {t["name"] for t in req["tools"]} == {
+        "write_file", "read_file", "list_files", "search_memory", "read_memory", "save_memory"
+    }
     assert req["fallbacks"] == "default"
 
 

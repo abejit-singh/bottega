@@ -31,6 +31,7 @@ flowchart LR
     O -- assigns task --> Team
     Team -- "tool calls: update_task, post_message" --> O
     Team -- "tool calls: write_file, read_file" --> WS[(Sandbox<br/>output/&lt;project_id&gt;/<br/>+ project_brief.json)]
+    Team -- "tool calls: search_memory, save_memory" --> MEM[(Company memory<br/>memory/ Obsidian vault<br/>persists across projects)]
     Team <-- Messages API --> C[[Claude API]]
     O -- events --> CT[Cost tracker]
     O -- Server-Sent Events --> DB[Live dashboard]
@@ -57,6 +58,18 @@ sequenceDiagram
 
 An agent = **system prompt + allowed tools + this loop**. All six roles share one `Agent` class (`bottega/agents/base.py`); a role is just a prompt file plus a list of tool names (`bottega/agents/roles.py`).
 
+### Company memory 🧠
+
+Bottega has two kinds of memory:
+
+| | Project memory | Company memory |
+|---|---|---|
+| Where | `output/<project_id>/` | `memory/` |
+| Lifetime | one project | forever, shared by all projects |
+| Contains | deliverables (research, HTML, copy) | client notes, playbooks, lessons learned |
+
+`memory/` is an **[Obsidian](https://obsidian.md) vault**: plain Markdown notes with YAML frontmatter (`author`, `updated`, `tags`) and `[[wikilinks]]`. Agents call `search_memory` / `read_memory` before they start and `save_memory` when they learn something reusable. You can open the same folder in Obsidian and watch the company's knowledge grow in the graph view.
+
 ### Project layout
 
 ```
@@ -66,14 +79,17 @@ bottega/
 │   ├── config.py           # typed settings from .env
 │   ├── costs.py            # pricing table + per-agent cost tracking
 │   ├── events.py           # events emitted by agents (CLI now, dashboard later)
+│   ├── sandbox.py          # Workspace: confines every path to one folder
+│   ├── memory/vault.py     # company memory: Obsidian vault, keyword search
 │   ├── agents/
 │   │   ├── base.py         # the tool-use loop
 │   │   ├── roles.py        # role registry (prompt + allowed tools)
 │   │   └── prompts/        # one markdown system prompt per role
 │   └── tools/
 │       ├── base.py         # Tool type + input validation
-│       ├── workspace.py    # sandbox confined to output/<project_id>/
-│       └── files.py        # write_file, read_file, list_files
+│       ├── files.py        # write_file, read_file, list_files
+│       └── memory_tools.py # search_memory, read_memory, save_memory
+├── memory/                 # the company's Obsidian vault (committed)
 └── tests/                  # offline tests using a fake Claude client
 ```
 
@@ -98,7 +114,9 @@ cp .env.example .env        # then put your key in .env (never commit it)
 python -m bottega solo researcher "Build a landing page for a pizzeria in Mantova, Italy"
 ```
 
-Output is written to `output/<project_id>/`.
+Output is written to `output/<project_id>/`, and reusable knowledge to `memory/`.
+
+**Browse the company memory:** in Obsidian choose *Open folder as vault* and select the `memory/` folder.
 
 **Run the tests** (offline, free, no API key needed):
 
@@ -117,6 +135,7 @@ All settings live in `.env` (see [`.env.example`](.env.example)):
 | `BOTTEGA_MAX_TOKENS` | `32000` | Max output tokens per API call |
 | `BOTTEGA_MAX_TURNS` | `25` | Max API calls per agent per task |
 | `BOTTEGA_OUTPUT_DIR` | `output` | Where projects are written |
+| `BOTTEGA_MEMORY_DIR` | `memory` | Company memory (Obsidian vault) |
 | `BOTTEGA_REFUSAL_FALLBACK` | `true` | If the model declines, retry server-side on a fallback model |
 
 ---
@@ -143,6 +162,7 @@ Project 20261115-213000-build-a-landing-page-for-a-pizzeria-in-m  |  model claud
 - **Tool errors go back to the model** (`is_error: true`) instead of crashing, so agents can fix their own mistakes.
 - **Streaming + eager tool-input streaming**, so long outputs (whole HTML files) don't hit HTTP timeouts. Because the API then skips input validation, we validate every tool input ourselves.
 - **Prompt caching** on the system prompt + tools, which are resent on every turn of the loop.
+- **Memory as Markdown files, not a database**, so humans (in Obsidian) and agents (through tools) share one source of truth. Search is plain keyword scoring: no extra dependencies and easy to debug. Semantic search with embeddings could replace it later behind the same `search()` function.
 - **Cost priced by `response.model`**, not the configured model, because a refusal fallback may have served the call. Unknown models are priced conservatively.
 
 ---
@@ -150,6 +170,7 @@ Project 20261115-213000-build-a-landing-page-for-a-pizzeria-in-m  |  model claud
 ## Roadmap
 
 - [x] **Phase 1:** project structure, config, base `Agent`, sandboxed file tools, cost tracking, one agent (Researcher)
+- [x] **Phase 1.5:** company memory (Obsidian vault + search/read/save tools)
 - [ ] **Phase 2:** orchestrator, task board, message log, `project_brief.json`, CEO delegating to 2 agents
 - [ ] **Phase 3:** all 6 agents + QA revision loop (max 2 revisions)
 - [ ] **Phase 4:** FastAPI + Server-Sent Events live dashboard

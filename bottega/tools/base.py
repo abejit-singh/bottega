@@ -12,9 +12,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from bottega.tools.workspace import Workspace
+from bottega.sandbox import Workspace
+
+if TYPE_CHECKING:  # import only for type hints, avoids a runtime import cycle
+    from bottega.memory import MemoryVault
 
 
 class ToolError(Exception):
@@ -30,7 +33,8 @@ class ToolContext:
     """Everything a tool handler may need. Phase 2 adds the task board and message log."""
 
     agent_name: str
-    workspace: Workspace
+    workspace: Workspace  # this project's files
+    memory: MemoryVault | None = None  # company-wide long-term memory
     files_written: list[str] = field(default_factory=list)
 
 

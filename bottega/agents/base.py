@@ -27,8 +27,9 @@ import anthropic
 from bottega.config import Settings
 from bottega.costs import CostTracker
 from bottega.events import Event, EventHandler, EventKind, ignore_event
+from bottega.memory import MemoryVault
+from bottega.sandbox import Workspace
 from bottega.tools.base import Tool, ToolContext, ToolError
-from bottega.tools.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ class Agent:
         settings: Settings,
         workspace: Workspace,
         costs: CostTracker,
+        memory: MemoryVault | None = None,
         on_event: EventHandler = ignore_event,
     ) -> None:
         self.name = name
@@ -74,6 +76,7 @@ class Agent:
         self.settings = settings
         self.workspace = workspace
         self.costs = costs
+        self.memory = memory
         self.on_event = on_event
 
     # ------------------------------------------------------------------ public
@@ -81,7 +84,7 @@ class Agent:
     def run(self, task: str) -> AgentResult:
         """Work on `task` until Claude stops calling tools (or limits are hit)."""
         self._emit("agent_start", task=task)
-        ctx = ToolContext(agent_name=self.name, workspace=self.workspace)
+        ctx = ToolContext(agent_name=self.name, workspace=self.workspace, memory=self.memory)
         # The API is stateless: we resend the whole conversation every call.
         messages: list[dict[str, Any]] = [{"role": "user", "content": task}]
         cost_usd = 0.0
