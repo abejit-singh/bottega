@@ -1,6 +1,6 @@
 """The base `Agent`: a system prompt, a set of tools, and the tool-use loop.
 
-Every AgentCo role (CEO, Developer, QA, ...) is this same class with a
+Every Bottega role (CEO, Developer, QA, ...) is this same class with a
 different prompt and tool list. The loop:
 
     messages = [task]
@@ -24,11 +24,11 @@ from typing import Any
 
 import anthropic
 
-from agentco.config import Settings
-from agentco.costs import CostTracker
-from agentco.events import Event, EventHandler, EventKind, ignore_event
-from agentco.tools.base import Tool, ToolContext, ToolError
-from agentco.tools.workspace import Workspace
+from bottega.config import Settings
+from bottega.costs import CostTracker
+from bottega.events import Event, EventHandler, EventKind, ignore_event
+from bottega.tools.base import Tool, ToolContext, ToolError
+from bottega.tools.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 

@@ -43,7 +43,7 @@ def _env_int(name: str, default: int) -> int:
 
 @dataclass(frozen=True)
 class Settings:
-    """All runtime configuration for AgentCo."""
+    """All runtime configuration for Bottega."""
 
     model: str = "claude-sonnet-5-5"
     effort: str = "medium"
@@ -57,19 +57,19 @@ class Settings:
 
     def __post_init__(self) -> None:
         if self.effort not in VALID_EFFORTS:
-            raise ValueError(f"AGENTCO_EFFORT must be one of {VALID_EFFORTS}, got {self.effort!r}")
+            raise ValueError(f"BOTTEGA_EFFORT must be one of {VALID_EFFORTS}, got {self.effort!r}")
         if self.max_tokens <= 0 or self.max_turns <= 0:
-            raise ValueError("AGENTCO_MAX_TOKENS and AGENTCO_MAX_TURNS must be positive")
+            raise ValueError("BOTTEGA_MAX_TOKENS and BOTTEGA_MAX_TURNS must be positive")
 
     @classmethod
     def from_env(cls) -> Settings:
         """Build settings from the process environment (after loading `.env`)."""
         load_dotenv()  # no-op if there is no .env file; never overrides real env vars
         return cls(
-            model=os.getenv("AGENTCO_MODEL", cls.model),
-            effort=os.getenv("AGENTCO_EFFORT", cls.effort),
-            max_tokens=_env_int("AGENTCO_MAX_TOKENS", cls.max_tokens),
-            max_turns=_env_int("AGENTCO_MAX_TURNS", cls.max_turns),
-            output_dir=Path(os.getenv("AGENTCO_OUTPUT_DIR", str(cls.output_dir))),
-            refusal_fallback=_env_bool("AGENTCO_REFUSAL_FALLBACK", cls.refusal_fallback),
+            model=os.getenv("BOTTEGA_MODEL", cls.model),
+            effort=os.getenv("BOTTEGA_EFFORT", cls.effort),
+            max_tokens=_env_int("BOTTEGA_MAX_TOKENS", cls.max_tokens),
+            max_turns=_env_int("BOTTEGA_MAX_TURNS", cls.max_turns),
+            output_dir=Path(os.getenv("BOTTEGA_OUTPUT_DIR", str(cls.output_dir))),
+            refusal_fallback=_env_bool("BOTTEGA_REFUSAL_FALLBACK", cls.refusal_fallback),
         )

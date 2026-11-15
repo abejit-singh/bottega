@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from agentco.costs import CostTracker, TokenUsage, cost_of
-from agentco.tools import TOOL_REGISTRY, ToolError
+from bottega.costs import CostTracker, TokenUsage, cost_of
+from bottega.tools import TOOL_REGISTRY, ToolError
 
 WRITE = TOOL_REGISTRY["write_file"]
 

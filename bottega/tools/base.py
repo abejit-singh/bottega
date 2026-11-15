@@ -14,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from agentco.tools.workspace import Workspace
+from bottega.tools.workspace import Workspace
 
 
 class ToolError(Exception):

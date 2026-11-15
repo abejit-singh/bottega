@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from agentco.agents import AgentError, build_agent
-from agentco.config import Settings
-from agentco.costs import CostTracker
-from agentco.events import Event
-from agentco.tools import Workspace
+from bottega.agents import AgentError, build_agent
+from bottega.config import Settings
+from bottega.costs import CostTracker
+from bottega.events import Event
+from bottega.tools import Workspace
 from tests.conftest import FakeClient, make_message, text, tool_use
 
 

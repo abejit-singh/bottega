@@ -13,11 +13,11 @@ from pathlib import Path
 
 import anthropic
 
-from agentco.agents.base import Agent
-from agentco.config import Settings
-from agentco.costs import CostTracker
-from agentco.events import EventHandler, ignore_event
-from agentco.tools import TOOL_REGISTRY, Workspace
+from bottega.agents.base import Agent
+from bottega.config import Settings
+from bottega.costs import CostTracker
+from bottega.events import EventHandler, ignore_event
+from bottega.tools import TOOL_REGISTRY, Workspace
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 

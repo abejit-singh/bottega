@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pytest
 
-from agentco.tools import SandboxError, Workspace, new_project_id
+from bottega.tools import SandboxError, Workspace, new_project_id
 
 
 def test_write_and_read_nested_file(workspace: Workspace) -> None:

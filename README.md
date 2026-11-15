@@ -1,6 +1,8 @@
-# AgentCo 🏢🤖
+# Bottega 🎨🤖
 
-**A company run entirely by AI agents.** Give AgentCo a goal, for example *"Build a landing page for a pizzeria in Mantova, Italy"*, and a team of specialized Claude agents (CEO, Researcher, Designer, Developer, Marketer, QA) splits it into tasks, collaborates through a shared task board and delivers real output: research, a design system, working HTML/CSS/JS, marketing copy.
+> *In Renaissance Italy, a **bottega** was a master's workshop: apprentices and specialists each worked on part of a piece (grinding pigments, painting backgrounds, finishing details) until the work was done. Bottega is that workshop, staffed by AI agents.*
+
+**A company run entirely by AI agents.** Give Bottega a goal, for example *"Build a landing page for a pizzeria in Mantova, Italy"*, and a team of specialized Claude agents (CEO, Researcher, Designer, Developer, Marketer, QA) splits it into tasks, collaborates through a shared task board and delivers real output: research, a design system, working HTML/CSS/JS, marketing copy.
 
 > 🚧 **Status: Phase 1 of 5.** A single agent (the Researcher) works end to end. See the [roadmap](#roadmap).
 
@@ -53,14 +55,14 @@ sequenceDiagram
     C-->>A: final summary (stop_reason = end_turn)
 ```
 
-An agent = **system prompt + allowed tools + this loop**. All six roles share one `Agent` class (`agentco/agents/base.py`); a role is just a prompt file plus a list of tool names (`agentco/agents/roles.py`).
+An agent = **system prompt + allowed tools + this loop**. All six roles share one `Agent` class (`bottega/agents/base.py`); a role is just a prompt file plus a list of tool names (`bottega/agents/roles.py`).
 
 ### Project layout
 
 ```
-agentco/
-├── agentco/
-│   ├── cli.py              # `python -m agentco ...`
+bottega/
+├── bottega/
+│   ├── cli.py              # `python -m bottega ...`
 │   ├── config.py           # typed settings from .env
 │   ├── costs.py            # pricing table + per-agent cost tracking
 │   ├── events.py           # events emitted by agents (CLI now, dashboard later)
@@ -82,8 +84,8 @@ agentco/
 Requires **Python 3.11+** and an [Anthropic API key](https://platform.claude.com/settings/keys).
 
 ```bash
-git clone https://github.com/<you>/agentco.git
-cd agentco
+git clone https://github.com/<you>/bottega.git
+cd bottega
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 
@@ -93,7 +95,7 @@ cp .env.example .env        # then put your key in .env (never commit it)
 **Run one agent (phase 1):**
 
 ```bash
-python -m agentco solo researcher "Build a landing page for a pizzeria in Mantova, Italy"
+python -m bottega solo researcher "Build a landing page for a pizzeria in Mantova, Italy"
 ```
 
 Output is written to `output/<project_id>/`.
@@ -110,12 +112,12 @@ All settings live in `.env` (see [`.env.example`](.env.example)):
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `AGENTCO_MODEL` | `claude-sonnet-5-5` | Model used by all agents |
-| `AGENTCO_EFFORT` | `medium` | Thinking depth: `low` … `max` (higher = better and pricier) |
-| `AGENTCO_MAX_TOKENS` | `32000` | Max output tokens per API call |
-| `AGENTCO_MAX_TURNS` | `25` | Max API calls per agent per task |
-| `AGENTCO_OUTPUT_DIR` | `output` | Where projects are written |
-| `AGENTCO_REFUSAL_FALLBACK` | `true` | If the model declines, retry server-side on a fallback model |
+| `BOTTEGA_MODEL` | `claude-sonnet-5-5` | Model used by all agents |
+| `BOTTEGA_EFFORT` | `medium` | Thinking depth: `low` … `max` (higher = better and pricier) |
+| `BOTTEGA_MAX_TOKENS` | `32000` | Max output tokens per API call |
+| `BOTTEGA_MAX_TURNS` | `25` | Max API calls per agent per task |
+| `BOTTEGA_OUTPUT_DIR` | `output` | Where projects are written |
+| `BOTTEGA_REFUSAL_FALLBACK` | `true` | If the model declines, retry server-side on a fallback model |
 
 ---
 

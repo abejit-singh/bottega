@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentco.tools.base import Tool, ToolContext, ToolError
-from agentco.tools.workspace import SandboxError
+from bottega.tools.base import Tool, ToolContext, ToolError
+from bottega.tools.workspace import SandboxError
 
 
 def _write_file(ctx: ToolContext, args: dict[str, Any]) -> str:

@@ -14,9 +14,9 @@ from typing import Any
 import pytest
 from anthropic.types.beta import BetaMessage
 
-from agentco.config import Settings
-from agentco.costs import CostTracker
-from agentco.tools import Workspace
+from bottega.config import Settings
+from bottega.costs import CostTracker
+from bottega.tools import Workspace
 
 
 def make_message(

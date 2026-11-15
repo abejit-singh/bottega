@@ -1,7 +1,7 @@
 """Command-line interface.
 
-Phase 1:  python -m agentco solo researcher "Build a landing page for a pizzeria in Mantova, Italy"
-Phase 2+: python -m agentco run "goal"   (the whole company)
+Phase 1:  python -m bottega solo researcher "Build a landing page for a pizzeria in Mantova, Italy"
+Phase 2+: python -m bottega run "goal"   (the whole company)
 """
 
 from __future__ import annotations
@@ -13,11 +13,11 @@ import sys
 
 import anthropic
 
-from agentco.agents import ROLES, AgentError, build_agent
-from agentco.config import Settings
-from agentco.costs import CostTracker
-from agentco.events import Event
-from agentco.tools import Workspace, new_project_id
+from bottega.agents import ROLES, AgentError, build_agent
+from bottega.config import Settings
+from bottega.costs import CostTracker
+from bottega.events import Event
+from bottega.tools import Workspace, new_project_id
 
 _ICONS = {
     "agent_start": "▶",
@@ -81,7 +81,7 @@ def cmd_solo(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="agentco", description="A company run by AI agents.")
+    parser = argparse.ArgumentParser(prog="bottega", description="Bottega: a workshop run by AI agents.")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = parser.add_subparsers(dest="command", required=True)
 

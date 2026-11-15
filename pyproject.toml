@@ -1,5 +1,5 @@
 [project]
-name = "agentco"
+name = "bottega"
 version = "0.1.0"
 description = "A company run entirely by AI agents built on the Claude API."
 readme = "README.md"
