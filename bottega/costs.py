@@ -130,3 +130,19 @@ class CostTracker:
     def total_usd(self) -> float:
         with self._lock:
             return sum(s.cost_usd for s in self._by_agent.values())
+
+    def to_dict(self) -> dict[str, Any]:
+        """Plain data, so a finished project's spend can be saved to disk."""
+        return {
+            name: {"calls": s.calls, "cost_usd": s.cost_usd, **vars(s.usage)}
+            for name, s in self.by_agent().items()
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CostTracker:
+        tracker = cls()
+        for name, row in data.items():
+            row = dict(row)
+            calls, cost = row.pop("calls", 0), row.pop("cost_usd", 0.0)
+            tracker._by_agent[name] = AgentSpend(calls, TokenUsage(**row), cost)
+        return tracker

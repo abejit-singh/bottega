@@ -29,6 +29,7 @@ from bottega.config import Settings
 from bottega.costs import CostTracker
 from bottega.events import Event, EventHandler, EventKind, ignore_event
 from bottega.memory import MemoryVault
+from bottega.project import ProjectState
 from bottega.sandbox import Workspace
 from bottega.tools.base import Tool, ToolContext, ToolError
 
@@ -69,11 +70,15 @@ class Agent:
         settings: Settings,
         workspace: Workspace,
         costs: CostTracker,
+        role: str = "",
         memory: MemoryVault | None = None,
+        project: ProjectState | None = None,
         cancel: threading.Event | None = None,
         on_event: EventHandler = ignore_event,
     ) -> None:
-        self.name = name
+        self.name = name  # display name, e.g. "Developer"
+        self.role = role  # machine name, e.g. "developer"
+        self.project = project  # shared board/messages/brief; None when working solo
         self.system_prompt = system_prompt
         self.tools = {tool.name: tool for tool in tools}
         self.client = client
@@ -88,10 +93,17 @@ class Agent:
 
     # ------------------------------------------------------------------ public
 
-    def run(self, task: str) -> AgentResult:
-        """Work on `task` until Claude stops calling tools (or limits are hit)."""
-        self._emit("agent_start", task=task)
-        ctx = ToolContext(agent_name=self.name, workspace=self.workspace, memory=self.memory)
+    def run(self, task: str, task_id: str | None = None) -> AgentResult:
+        """Work on `task` until Claude stops calling tools (or limits are hit).
+
+        `task_id` is the board task this run belongs to, if any. Tools use it
+        to make sure an agent only hands in (or reviews) its own task.
+        """
+        self._emit("agent_start", task=task, task_id=task_id)
+        ctx = ToolContext(
+            agent_name=self.name, workspace=self.workspace, memory=self.memory,
+            role=self.role, project=self.project, task_id=task_id,
+        )
         # The API is stateless: we resend the whole conversation every call.
         messages: list[dict[str, Any]] = [{"role": "user", "content": task}]
         cost_usd = 0.0
@@ -206,21 +218,22 @@ class Agent:
 
     def _run_tool(self, block: Any, ctx: ToolContext) -> dict[str, Any]:
         """Execute one tool_use block and build the matching tool_result block."""
-        self._emit("tool_call", tool=block.name, input=_preview_input(block.input))
+        preview = _preview_input(block.input)
+        self._emit("tool_call", tool=block.name, input=preview)
         tool = self.tools.get(block.name)
         try:
             if tool is None:
                 raise ToolError(f"Unknown tool {block.name!r}. Available: {', '.join(self.tools)}.")
             output = tool.handler(ctx, tool.validate(block.input))
         except ToolError as exc:
-            self._emit("tool_result", tool=block.name, ok=False, output=str(exc))
+            self._emit("tool_result", tool=block.name, input=preview, ok=False, output=str(exc))
             return _error_result(block.id, str(exc))
         except Exception as exc:  # a bug in a tool must not crash the whole company
             logger.exception("Tool %s crashed", block.name)
-            self._emit("tool_result", tool=block.name, ok=False, output=repr(exc))
+            self._emit("tool_result", tool=block.name, input=preview, ok=False, output=repr(exc))
             return _error_result(block.id, f"Internal tool error: {exc!r}")
 
-        self._emit("tool_result", tool=block.name, ok=True, output=output[:300])
+        self._emit("tool_result", tool=block.name, input=preview, ok=True, output=output[:300])
         return {"type": "tool_result", "tool_use_id": block.id, "content": output}
 
     def _emit(self, kind: EventKind, **data: Any) -> None:

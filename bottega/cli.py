@@ -1,10 +1,10 @@
 """Command-line interface.
 
-    python -m bottega serve            # the command center dashboard
-    python -m bottega serve --demo     # same, with scripted responses (no API key, no cost)
-    python -m bottega solo researcher "Build a landing page for a pizzeria in Mantova, Italy"
-
-Phase 2+ adds: python -m bottega run "goal"   (the whole company, in the terminal)
+    python -m bottega serve               # the dashboard, at http://localhost:8000
+    python -m bottega serve --demo        # same, with scripted responses (no key, no cost)
+    python -m bottega run "goal"          # the whole team, in the terminal
+    python -m bottega run --demo "goal"   # scripted, to see how it works for free
+    python -m bottega solo researcher "goal"   # one agent alone (handy for tuning a prompt)
 """
 
 from __future__ import annotations
@@ -14,15 +14,18 @@ import json
 import logging
 import os
 import sys
+from typing import Any
 
 import anthropic
 
-from bottega.agents import ROLES, AgentError, build_agent
+from bottega.agents import AgentError, build_agent
+from bottega.company import Company
 from bottega.config import Settings
 from bottega.costs import CostTracker
 from bottega.errors import explain
 from bottega.events import Event
 from bottega.memory import MemoryVault
+from bottega.team import WORKER_ROLES
 from bottega.tools import Workspace, new_project_id
 
 _ICONS = {
@@ -34,9 +37,19 @@ _ICONS = {
     "error": "✖",
 }
 
+_TASK_CHANGES = {
+    "created": "📌 new task",
+    "started": "▶ started",
+    "submitted": "📤 handed in",
+    "approved": "✅ approved",
+    "revision": "↩ sent back",
+    "released": "⏸ back in the queue",
+    "failed": "✖ failed",
+}
+
 
 def print_event(event: Event) -> None:
-    """CLI event listener: one readable line per event."""
+    """CLI listener for one agent's events: one readable line per event."""
     if event.kind == "usage":
         return  # cost ticks are for the dashboard; the CLI prints a summary at the end
     icon = _ICONS.get(event.kind, "•")
@@ -57,7 +70,85 @@ def print_event(event: Event) -> None:
     print(f"{icon} [{event.agent}] {line}", flush=True)
 
 
+def print_team_event(event: dict[str, Any]) -> None:
+    """CLI listener for a whole-team run. Shows the story (tasks, messages,
+    files, problems) and leaves out the play-by-play of every tool call."""
+    agent, kind, d = event["agent"], event["kind"], event["data"]
+    if kind == "project_start":
+        line = f"🎯 New project: {d['goal']}"
+    elif kind == "task":
+        task = d["task"]
+        line = f"{_TASK_CHANGES.get(d['change'], d['change'])}: {task['id']} {task['title']}"
+        if d["change"] == "revision":
+            line += f"\n      feedback: {task['feedback'][-1]}"
+        elif d["change"] == "failed":
+            line += f"\n      reason: {task['error']}"
+    elif kind == "message":
+        line = f"💬 to {d['to']}: {d['text']}"
+    elif kind == "tool_result" and d["tool"] == "write_file" and d["ok"]:
+        line = f"📄 {d['output']}"
+    elif kind == "tool_result" and not d["ok"]:
+        line = f"⚠ {d['tool']} failed: {d['output'].splitlines()[0]}"
+    elif kind == "error":
+        line = f"✖ {d.get('message', '')}"
+    elif kind == "project_done":
+        line = f"🏁 Project {d['status']} (${d['cost_usd']:.4f}, {d['files']} files)"
+    else:
+        return
+    print(f"[{agent}] {line}", flush=True)
+
+
+def _warn_if_no_key() -> None:
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        print("Warning: ANTHROPIC_API_KEY is not set. Projects will fail until you add it "
+              "to .env (or use --demo to try Bottega for free).", file=sys.stderr)
+
+
+def _build_company(args: argparse.Namespace, settings: Settings, publish: Any) -> Company:
+    if args.demo:
+        from bottega.demo import DemoClient, demo_settings
+
+        print("DEMO MODE: scripted responses, no API calls, nothing is billed.")
+        delay = 1.0 if args.command == "serve" else 0.15
+        return Company(demo_settings(settings), publish=publish,
+                       client_factory=lambda: DemoClient(delay=delay), demo=True)
+    _warn_if_no_key()
+    return Company(settings, publish=publish)
+
+
+def cmd_run(args: argparse.Namespace, settings: Settings) -> int:
+    company = _build_company(args, settings, print_team_event)
+    project = company.start_project(args.goal)
+    print(f"Project {project.id}  |  model {settings.model}  |  budget ${settings.max_cost_usd:.2f}\n")
+    try:
+        while project.thread is not None and project.thread.is_alive():
+            project.thread.join(0.2)  # short waits keep Ctrl+C responsive
+    except KeyboardInterrupt:
+        print("\nStopping after the current step...", file=sys.stderr)
+        company.stop_project(project.id)
+        company.wait(project.id)
+
+    if project.state is not None:
+        print("\nTask board:")
+        for task in project.state.board.tasks():
+            revised = f", revised {task.revisions}x" if task.revisions else ""
+            print(f"  {task.id} [{task.status}{revised}] {task.title} ({task.owner})")
+    print(f"\nFiles in {project.workspace.root}:")
+    for path in project.workspace.list_files():
+        print(f"  - {path}")
+    print("\nCost by agent:")
+    for name, spend in project.costs.by_agent().items():
+        print(f"  {name:<11} {spend.calls:>3} calls  ${spend.cost_usd:.4f}")
+    print(f"  {'Total':<11} {'':>9}  ${project.costs.total_usd:.4f}")
+    if project.summary:
+        print(f"\nSummary for the client:\n{project.summary}")
+    if project.error:
+        print(f"\nError: {project.error}", file=sys.stderr)
+    return 0 if project.status == "done" else 2
+
+
 def cmd_solo(args: argparse.Namespace, settings: Settings) -> int:
+    _warn_if_no_key()
     project_id = new_project_id(args.goal)
     workspace = Workspace(settings.output_dir / project_id)
     costs = CostTracker()
@@ -65,7 +156,7 @@ def cmd_solo(args: argparse.Namespace, settings: Settings) -> int:
     notes_before = set(memory.list_notes())
     agent = build_agent(
         args.role,
-        client=anthropic.Anthropic(),  # reads ANTHROPIC_API_KEY from the environment
+        client=anthropic.Anthropic(max_retries=settings.api_retries),  # reads ANTHROPIC_API_KEY
         settings=settings,
         workspace=workspace,
         costs=costs,
@@ -99,11 +190,10 @@ def cmd_solo(args: argparse.Namespace, settings: Settings) -> int:
 
 
 def cmd_serve(args: argparse.Namespace, settings: Settings) -> int:
-    # Imported here so `solo` keeps working even if the web extras are missing.
+    # Imported here so `run` and `solo` keep working even if the web extras are missing.
     try:
         import uvicorn
 
-        from bottega.company import Company
         from bottega.web import EventHub, create_app
     except ImportError as exc:
         print(f"The dashboard needs FastAPI and uvicorn ({exc}).\n"
@@ -111,42 +201,36 @@ def cmd_serve(args: argparse.Namespace, settings: Settings) -> int:
         return 1
 
     hub = EventHub()
-    if args.demo:
-        from bottega.demo import DemoClient, demo_settings
-
-        company = Company(demo_settings(settings), publish=hub.publish,
-                          client_factory=DemoClient, demo=True)
-        print("DEMO MODE: scripted responses, no API calls, nothing is billed.")
-    else:
-        company = Company(settings, publish=hub.publish)
-        if not os.getenv("ANTHROPIC_API_KEY"):
-            print("Warning: ANTHROPIC_API_KEY is not set. Projects will fail until you add it "
-                  "to .env (or use --demo to explore the dashboard for free).", file=sys.stderr)
-
+    company = _build_company(args, settings, hub.publish)
     shown_host = "localhost" if args.host in ("127.0.0.1", "0.0.0.0") else args.host
-    print(f"Bottega command center: http://{shown_host}:{args.port}   (Ctrl+C to stop)")
+    print(f"Bottega is open: http://{shown_host}:{args.port}   (Ctrl+C to stop)")
     uvicorn.run(create_app(company, hub), host=args.host, port=args.port,
                 log_level="warning", timeout_graceful_shutdown=2)
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="bottega", description="Bottega: a workshop run by AI agents.")
+    parser = argparse.ArgumentParser(prog="bottega", description="Bottega: a studio run by AI agents.")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = parser.add_subparsers(dest="command", required=True)
+    demo_help = "scripted responses: no API key needed, nothing is billed"
 
-    solo = sub.add_parser("solo", help="run a single agent on a goal (phase 1)")
-    solo.add_argument("role", choices=sorted(ROLES), help="which agent to run")
-    solo.add_argument("goal", help='e.g. "Build a landing page for a pizzeria in Mantova, Italy"')
-    solo.set_defaults(func=cmd_solo)
+    run = sub.add_parser("run", help="give the whole team a goal, in the terminal")
+    run.add_argument("goal", help='e.g. "Build a landing page for a pizzeria in Mantova, Italy"')
+    run.add_argument("--demo", action="store_true", help=demo_help)
+    run.set_defaults(func=cmd_run)
 
-    serve = sub.add_parser("serve", help="start the command center dashboard")
-    serve.add_argument("--demo", action="store_true",
-                       help="scripted responses: no API key needed, nothing is billed")
+    serve = sub.add_parser("serve", help="start the dashboard")
+    serve.add_argument("--demo", action="store_true", help=demo_help)
     serve.add_argument("--host", default="127.0.0.1",
                        help="address to listen on (default: this computer only)")
     serve.add_argument("--port", type=int, default=8000)
     serve.set_defaults(func=cmd_serve)
+
+    solo = sub.add_parser("solo", help="run one agent alone on a goal (no task board)")
+    solo.add_argument("role", choices=WORKER_ROLES, help="which agent to run")
+    solo.add_argument("goal")
+    solo.set_defaults(func=cmd_solo)
     return parser
 
 

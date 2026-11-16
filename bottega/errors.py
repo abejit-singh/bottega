@@ -33,3 +33,28 @@ def explain(exc: BaseException) -> str:
         # e.g. no credentials configured at all
         return f"Claude SDK error: {exc}"
     return f"Unexpected error: {exc!r}"
+
+
+def is_fatal(exc: BaseException) -> bool:
+    """Errors that will hit every agent the same way: stop the whole project.
+
+    A wrong API key, a model name that doesn't exist or a request the API
+    rejects as malformed will not get better by trying another task.
+    """
+    return isinstance(exc, (
+        anthropic.AuthenticationError,
+        anthropic.PermissionDeniedError,
+        anthropic.NotFoundError,
+        anthropic.BadRequestError,
+    ))
+
+
+def is_transient(exc: BaseException) -> bool:
+    """Errors worth another try: the network or the API had a bad moment.
+
+    The SDK already retries these a few times by itself; this is for deciding
+    whether to retry the whole task after the SDK has given up.
+    """
+    if isinstance(exc, (anthropic.RateLimitError, anthropic.APIConnectionError)):
+        return True  # APITimeoutError is a kind of APIConnectionError
+    return isinstance(exc, anthropic.APIStatusError) and exc.status_code >= 500

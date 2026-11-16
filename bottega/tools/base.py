@@ -18,6 +18,7 @@ from bottega.sandbox import Workspace
 
 if TYPE_CHECKING:  # import only for type hints, avoids a runtime import cycle
     from bottega.memory import MemoryVault
+    from bottega.project import ProjectState
 
 
 class ToolError(Exception):
@@ -30,11 +31,14 @@ class ToolError(Exception):
 
 @dataclass
 class ToolContext:
-    """Everything a tool handler may need. Phase 2 adds the task board and message log."""
+    """Everything a tool handler may need to do its job."""
 
-    agent_name: str
+    agent_name: str  # display name, e.g. "Developer"
     workspace: Workspace  # this project's files
     memory: MemoryVault | None = None  # company-wide long-term memory
+    role: str = ""  # machine name, e.g. "developer"
+    project: ProjectState | None = None  # task board, messages, brief (None in solo runs)
+    task_id: str | None = None  # the task this agent is working on or reviewing
     files_written: list[str] = field(default_factory=list)
 
 
