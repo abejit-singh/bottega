@@ -90,8 +90,9 @@ class Project:
             **self.to_dict(),
             "summary": self.summary,
             "error": self.error,
-            "files": [f for f in self.workspace.list_files()],
+            "files": self.workspace.list_files(),
             "new_notes": list(self.new_notes),
+            "costs": self.costs.to_dict(),  # spend per agent, for this project
             "tasks": state.board.to_list() if state else [],
             "messages": state.messages.to_list() if state else [],
             "brief": state.brief.to_dict() if state else {},

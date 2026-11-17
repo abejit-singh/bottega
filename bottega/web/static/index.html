@@ -4,124 +4,121 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Bottega · Command Center</title>
+  <title>Bottega</title>
   <!-- Relative URLs everywhere, so the page also works behind a proxy path. -->
+  <!-- Inter for the interface. Without internet the page falls back to the system font. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="static/style.css">
 </head>
 <body>
   <div class="app">
 
-    <header class="topbar">
-      <div class="brand">
-        <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
-          <circle class="bm-outer" cx="24" cy="24" r="21"/>
-          <circle class="bm-dash" cx="24" cy="24" r="15.5"/>
-          <circle class="bm-core" cx="24" cy="24" r="6"/>
-        </svg>
-        <div>
-          <h1>Bottega</h1>
-          <p>Command center</p>
-        </div>
-      </div>
+    <header class="top">
+      <p class="wordmark">Bottega</p>
 
-      <p id="demo-badge" class="demo-badge" hidden>
-        <span aria-hidden="true">▲</span> Demo mode · scripted responses, simulated costs
+      <label class="switcher" id="switcher" hidden>
+        <span class="sr-only">Project</span>
+        <select id="project-select"></select>
+      </label>
+
+      <p id="demo-badge" class="badge" hidden>
+        <span class="badge-icon" aria-hidden="true">▲</span> Demo · scripted answers, nothing is billed
       </p>
 
-      <dl class="sys">
-        <div><dt>Model</dt><dd id="sys-model">–</dd></div>
-        <div><dt>Effort</dt><dd id="sys-effort">–</dd></div>
-        <div><dt>Link</dt><dd id="sys-link" data-state="connecting"><span class="dot" aria-hidden="true"></span><span id="sys-link-text">Connecting</span></dd></div>
-        <div><dt>Local time</dt><dd id="sys-clock">–</dd></div>
-      </dl>
+      <div class="top-right">
+        <div class="spend">
+          <p><b id="spend-value">$0.00</b> <span id="spend-limit">of $1.00</span></p>
+          <div class="meter" id="spend-meter" role="meter" aria-label="Project budget used"
+               aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" data-level="ok">
+            <div class="meter-fill" id="spend-fill"></div>
+          </div>
+        </div>
+        <p id="link" class="link" data-state="connecting">
+          <span class="dot" aria-hidden="true"></span><span id="link-text">Connecting</span>
+        </p>
+      </div>
     </header>
 
-    <main class="layout">
+    <div class="shell">
+      <main class="stage">
 
-      <!-- LEFT: money and project history -->
-      <div class="col col-left">
-        <section class="panel spend" aria-labelledby="spend-h">
-          <h2 id="spend-h">Spend</h2>
-          <p class="hero" id="total-cost">$0.00</p>
-          <p class="hero-label">Total this session</p>
+        <!-- Give the studio a goal -->
+        <form id="command" class="command" autocomplete="off">
+          <input id="goal" type="text" maxlength="2000" aria-label="Goal for the studio"
+                 placeholder="What should the studio build?">
+          <button type="submit" id="start" class="btn primary">Start</button>
+          <button type="button" id="stop" class="btn" hidden>Stop</button>
+        </form>
+        <p id="status-line" class="status-line" role="status"></p>
 
-          <div class="meter-block">
-            <div class="meter-head">
-              <span id="budget-label">Project budget</span>
-              <span id="budget-value">–</span>
-            </div>
-            <div class="meter" id="budget-meter" role="meter" aria-labelledby="budget-label"
-                 aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" data-level="ok">
-              <div class="meter-fill" id="budget-fill"></div>
-            </div>
-            <p class="meter-note" id="budget-note"></p>
-          </div>
-
-          <dl class="tiles">
-            <div class="tile"><dt>API calls</dt><dd id="total-calls">0</dd></div>
-            <div class="tile"><dt>Tokens in</dt><dd id="total-in">0</dd></div>
-            <div class="tile"><dt>Tokens out</dt><dd id="total-out">0</dd></div>
-          </dl>
-        </section>
-
-        <section class="panel projects grow" aria-labelledby="projects-h">
-          <h2 id="projects-h">Projects <span class="count" id="projects-count">0</span></h2>
-          <ul id="projects" class="project-list scroll"></ul>
-          <p id="projects-empty" class="empty">No projects yet. Give your company its first goal.</p>
-        </section>
-      </div>
-
-      <!-- CENTER: give orders, watch the team, read the results -->
-      <div class="col col-center">
-        <section class="panel command" aria-labelledby="command-h">
-          <h2 id="command-h">New project</h2>
-          <form id="command-form" autocomplete="off">
-            <input id="goal" type="text" maxlength="2000" aria-label="Goal for the company"
-                   placeholder="What should the company build?  e.g. A landing page for a pizzeria in Mantova, Italy">
-            <label class="target">
-              <span>Assign to</span>
-              <select id="target"></select>
-            </label>
-            <button type="submit" id="launch" class="btn btn-primary">Launch</button>
-            <button type="button" id="stop" class="btn btn-danger" hidden>Stop</button>
-          </form>
-          <p id="command-msg" class="command-msg" role="status"></p>
-        </section>
-
-        <section class="panel team" aria-labelledby="team-h">
-          <h2 id="team-h">Team <span class="count" id="team-count"></span></h2>
+        <!-- The team, at work -->
+        <section class="studio" aria-label="The team">
           <div id="agents" class="agents"></div>
         </section>
 
-        <section class="panel workspace grow">
-          <div class="tabs" role="tablist" aria-label="Results">
-            <button type="button" role="tab" id="tab-deliverables" data-tab="deliverables" aria-selected="true">Deliverables</button>
-            <button type="button" role="tab" id="tab-memory" data-tab="memory" aria-selected="false">Company memory <span class="count" id="memory-count">0</span></button>
-            <button type="button" id="expand" class="expand" aria-pressed="false">Expand</button>
+        <!-- What they are working on, and what they made -->
+        <section class="work">
+          <div class="tabs" role="tablist" aria-label="Project">
+            <button type="button" role="tab" id="tab-board" data-tab="board" aria-selected="true">Board <span class="n" id="n-board"></span></button>
+            <button type="button" role="tab" id="tab-files" data-tab="files" aria-selected="false">Files <span class="n" id="n-files"></span></button>
+            <button type="button" role="tab" id="tab-memory" data-tab="memory" aria-selected="false">Memory <span class="n" id="n-memory"></span></button>
+            <button type="button" role="tab" id="tab-costs" data-tab="costs" aria-selected="false">Costs</button>
           </div>
-          <div class="browser">
-            <div class="browser-side">
-              <p id="browser-context" class="browser-context"></p>
-              <ul id="browser-items" class="browser-items scroll"></ul>
-            </div>
+
+          <div id="panel-board" class="panel board" role="tabpanel" aria-labelledby="tab-board"></div>
+
+          <div id="panel-files" class="panel split" role="tabpanel" aria-labelledby="tab-files" hidden>
+            <ul id="file-list" class="list"></ul>
             <div class="viewer">
-              <p id="viewer-title" class="viewer-title"></p>
-              <pre id="viewer" class="scroll" tabindex="0"></pre>
+              <div class="viewer-head">
+                <p id="file-title" class="viewer-title"></p>
+                <div class="seg" id="file-mode" hidden>
+                  <button type="button" data-mode="preview" aria-pressed="true">Preview</button>
+                  <button type="button" data-mode="code" aria-pressed="false">Code</button>
+                </div>
+              </div>
+              <iframe id="file-frame" class="viewer-frame" title="Preview of the generated page"
+                      sandbox="allow-scripts" hidden></iframe>
+              <pre id="file-text" class="viewer-text" tabindex="0"></pre>
             </div>
           </div>
-        </section>
-      </div>
 
-      <!-- RIGHT: everything the agents say and do, as it happens -->
-      <div class="col col-right">
-        <section class="panel feed grow" aria-labelledby="feed-h">
-          <h2 id="feed-h">Live feed</h2>
-          <ol id="feed" class="feed-list scroll" aria-live="off"></ol>
-          <p id="feed-empty" class="empty">Everything your agents say and do appears here, as it happens.</p>
-        </section>
-      </div>
+          <div id="panel-memory" class="panel split" role="tabpanel" aria-labelledby="tab-memory" hidden>
+            <ul id="note-list" class="list"></ul>
+            <div class="viewer">
+              <div class="viewer-head"><p id="note-title" class="viewer-title"></p></div>
+              <pre id="note-text" class="viewer-text" tabindex="0"></pre>
+            </div>
+          </div>
 
-    </main>
+          <div id="panel-costs" class="panel costs" role="tabpanel" aria-labelledby="tab-costs" hidden></div>
+        </section>
+      </main>
+
+      <!-- Everything the team says and does -->
+      <aside class="activity" aria-label="Activity">
+        <div class="activity-head">
+          <h2>Activity</h2>
+          <div class="seg" id="feed-filter">
+            <button type="button" data-filter="highlights" aria-pressed="true">Highlights</button>
+            <button type="button" data-filter="all" aria-pressed="false">Everything</button>
+          </div>
+        </div>
+        <p id="agent-filter" class="agent-filter" hidden>
+          <span>Only <b id="agent-filter-name"></b></span>
+          <button type="button" id="agent-filter-clear" class="link-btn">Show everyone</button>
+        </p>
+        <ol id="feed" class="feed"></ol>
+        <p id="feed-empty" class="empty">What your team says and does will appear here.</p>
+        <form id="composer" class="composer" autocomplete="off">
+          <input id="message" type="text" maxlength="1500" aria-label="Message to the team"
+                 placeholder="Tell the team something…">
+          <button type="submit" id="send" class="btn small">Send</button>
+        </form>
+      </aside>
+    </div>
   </div>
   <script src="static/app.js"></script>
 </body>
