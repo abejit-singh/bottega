@@ -16,7 +16,7 @@ def explain(exc: BaseException) -> str:
     if isinstance(exc, AgentError):
         return str(exc)
     if isinstance(exc, anthropic.AuthenticationError):
-        return "Authentication failed: set ANTHROPIC_API_KEY in your .env file."
+        return "The API key was rejected. Check ANTHROPIC_API_KEY in your .env file."
     if isinstance(exc, anthropic.PermissionDeniedError):
         return "Your API key is not allowed to use this model or feature."
     if isinstance(exc, anthropic.NotFoundError):

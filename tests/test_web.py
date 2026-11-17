@@ -160,3 +160,16 @@ def test_other_websites_cannot_start_projects(client: TestClient, headers: dict[
     # Reading is still allowed, and the dashboard's own requests pass.
     assert client.get("/api/state", headers=headers).status_code == 200
     assert client.post("/api/projects", json=GOAL, headers={"Sec-Fetch-Site": "same-origin"}).status_code == 201
+
+
+def test_download_all_files_as_a_zip(client: TestClient) -> None:
+    import io
+    import zipfile
+
+    project_id = run_project(client)
+    response = client.get(f"/api/projects/{project_id}/download")
+    assert response.status_code == 200 and response.headers["content-type"] == "application/zip"
+    assert f'filename="{project_id}.zip"' in response.headers["content-disposition"]
+    names = zipfile.ZipFile(io.BytesIO(response.content)).namelist()
+    assert f"{project_id}/site/index.html" in names and f"{project_id}/research.md" in names
+    assert not any(".bottega" in name for name in names)   # bookkeeping stays private

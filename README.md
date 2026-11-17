@@ -1,5 +1,9 @@
 # Bottega
 
+[![tests](https://github.com/abejit-singh/bottega/actions/workflows/tests.yml/badge.svg)](https://github.com/abejit-singh/bottega/actions/workflows/tests.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-informational)
+![License: MIT](https://img.shields.io/badge/license-MIT-informational)
+
 > *In Renaissance Italy, a **bottega** was a master's workshop: apprentices and specialists each worked on part of a piece (grinding pigments, painting backgrounds, finishing details) until the work was done. Bottega is that workshop, staffed by AI agents.*
 
 **A small studio run entirely by AI agents built on the Claude API.** Give it a goal, such as *"A landing page for a pizzeria in Mantova, Italy"*. A team of six Claude agents plans the work, splits it up, builds it in parallel, reviews every piece and delivers real files: research, a design system, a working website, website copy, an outreach email and social posts.
@@ -106,8 +110,9 @@ Before every call the loop checks the **Stop button** and the **budget**, and af
 - **see the agents**: each has a character, a color and a speech bubble that says what it is doing ("Writing design.md", "Sending it back"), and its tool moves while it works;
 - **give orders**: start a project, message the team while it works, stop it;
 - **follow the work** on a kanban board (To do, In progress, In review, Done), with QA's feedback on every card;
-- **open the results**: the generated website in a live preview, plus every file and every memory note;
-- **watch the money**: total cost, the budget meter, and the cost of each agent.
+- **open the results**: the generated website in a live preview at desktop or phone width, every document rendered and readable (placeholders to replace are highlighted, color codes get a swatch), every memory note, and a zip with all the files;
+- **watch the money**: total cost, the budget meter, and the cost of each agent;
+- **know if Claude is ready**: at startup the page checks the API key, the model and every agent's setup, and refuses to start a project that would only fail.
 
 The page gets live updates through **Server-Sent Events**. Each event adds a line to the activity feed and tells the page that something changed. The page then fetches one JSON snapshot, which is the single source of truth, so the numbers can never drift.
 
@@ -141,6 +146,13 @@ cp .env.example .env        # then put your key in .env (it is git-ignored)
 python -m bottega serve --demo     # then open http://localhost:8000
 ```
 
+**Check that everything is ready** before the first real run. It is free: it uses the token-counting endpoint, which generates nothing.
+
+```bash
+python -m bottega check            # API key, model, and every agent's prompt and tools
+python -m bottega check --live     # plus one tiny real request (under a cent)
+```
+
 **Run the real team:**
 
 ```bash
@@ -151,10 +163,11 @@ python -m bottega solo researcher "…"                                    # one
 
 Each project is saved in `output/<project_id>/`. Open `site/index.html` in a browser to see the website the team built.
 
-**Run the tests** (offline, free, no API key needed):
+**Run the tests and the linter** (offline, free, no API key needed):
 
 ```bash
 pytest
+ruff check bottega tests
 ```
 
 ### Configuration
@@ -243,13 +256,14 @@ bottega/
 │   ├── sandbox.py          # Workspace: confines every path to one folder
 │   ├── costs.py            # pricing table + cost per agent
 │   ├── errors.py           # which errors stop a project, which are worth a retry
+│   ├── check.py            # preflight check: key, model, every agent's prompt and tools
 │   ├── demo.py             # scripted stand-in for the Claude API (--demo, tests)
 │   └── web/
 │       ├── server.py       # FastAPI: JSON API, SSE, sandboxed previews
 │       ├── hub.py          # EventHub: thread-safe pub/sub with replay
-│       └── static/         # the dashboard: index.html, style.css, app.js
+│       └── static/         # the dashboard: index.html, style.css, app.js, markdown.js
 ├── memory/                 # the company's Obsidian vault
-├── tests/                  # 105 offline tests
+├── tests/                  # 112 offline tests, run on every push by GitHub Actions
 └── docs/                   # screenshot and demo GIF
 ```
 
@@ -267,11 +281,13 @@ bottega/
 - **Streaming, prompt caching and tool-input validation.** Long outputs (whole HTML files) stream, so they don't hit HTTP timeouts. The system prompt and tools are cached, because they are resent on every turn. Because tool inputs stream too, the API no longer validates them, so every input is checked in our code before a tool runs.
 - **Cost priced by `response.model`.** A refusal fallback may answer on a different model; unknown models are priced conservatively.
 - **A scripted client for demos and tests.** `DemoClient` plays all six agents. It powers `--demo` and most of the tests, which therefore exercise the real orchestrator, tools and agent loop, for free and the same way every time.
-- **No frontend framework, no build step.** The dashboard is three static files; the six characters are drawn with plain SVG shapes and animated with CSS.
+- **Check before you spend.** `bottega check` sends each agent's real system prompt and tools to the free token-counting endpoint, so a wrong key, a wrong model name or a broken tool definition shows up in seconds instead of halfway through a paid project.
+- **A Markdown renderer that cannot be tricked.** Deliverables are written by a model, so the dashboard's small renderer builds every element with `textContent` and never uses `innerHTML`; only http(s) links become clickable.
+- **No frontend framework, no build step.** The dashboard is four static files; the six characters are drawn with plain SVG shapes and animated with CSS.
 
 ## Tests
 
-`pytest` runs 105 tests in about two seconds, with no network and no API key:
+`pytest` runs 112 tests in about three seconds, with no network and no API key. GitHub Actions runs them, plus the linter, on Python 3.11, 3.12 and 3.13 for every push.
 
 | File | What it covers |
 |---|---|
@@ -280,7 +296,8 @@ bottega/
 | `test_board_tools.py` | each teamwork tool, and which role may use what |
 | `test_agent.py` | the tool-use loop: tool errors, truncated output, turn limit, refusals, cancel, budget |
 | `test_company.py` | project lifecycle, live snapshot, history after a restart |
-| `test_web.py` | the HTTP API, sandboxed previews, cross-site protection, the event hub |
+| `test_web.py` | the HTTP API, sandboxed previews, the zip download, cross-site protection, the event hub |
+| `test_check.py` | the preflight check: missing key, rejected key, every agent's setup, the live request |
 | `test_workspace.py`, `test_memory.py`, `test_tools_and_costs.py` | sandbox escapes, memory search, input validation, pricing |
 
 ## Limitations

@@ -1,0 +1,26 @@
+# Runs the linter and the whole test suite on every push and pull request.
+# The tests are offline (a scripted client stands in for Claude), so no API key is needed.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check bottega tests
+      - name: Test
+        run: pytest -q

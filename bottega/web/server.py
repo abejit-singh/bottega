@@ -23,8 +23,11 @@ Security notes (the dashboard has no login and can spend your API credits):
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import mimetypes
+import re
+import zipfile
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -149,6 +152,18 @@ def create_app(company: Company, hub: EventHub) -> FastAPI:
         except SandboxError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @app.get("/api/projects/{project_id}/download")
+    def download_project(project_id: str) -> Response:
+        """Every deliverable in one zip file (Bottega's bookkeeping is left out)."""
+        project = project_or_404(project_id)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for path in project.workspace.list_files():
+                archive.write(project.workspace.resolve(path), f"{project.id}/{path}")
+        name = re.sub(r"[^A-Za-z0-9._-]", "-", project.id)
+        return Response(buffer.getvalue(), media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})
+
     @app.get("/api/projects/{project_id}/preview/{path:path}")
     def preview_project_file(project_id: str, path: str) -> FileResponse:
         """A deliverable served raw, so a generated web page can be shown in a frame."""
@@ -210,7 +225,7 @@ def create_app(company: Company, hub: EventHub) -> FastAPI:
                     try:
                         event = await asyncio.wait_for(queue.get(), timeout=PING_SECONDS)
                         yield _sse(event)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         yield "event: ping\ndata: {}\n\n"  # heartbeat on a quiet line
             finally:
                 # Runs when the browser disconnects (the generator is cancelled).

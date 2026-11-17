@@ -23,8 +23,8 @@
         <select id="project-select"></select>
       </label>
 
-      <p id="demo-badge" class="badge" hidden>
-        <span class="badge-icon" aria-hidden="true">▲</span> Demo · scripted answers, nothing is billed
+      <p id="mode-badge" class="badge" data-status="checking">
+        <span class="badge-icon" aria-hidden="true"></span><span id="mode-text">Connecting…</span>
       </p>
 
       <div class="top-right">
@@ -51,7 +51,10 @@
           <button type="submit" id="start" class="btn primary">Start</button>
           <button type="button" id="stop" class="btn" hidden>Stop</button>
         </form>
-        <p id="status-line" class="status-line" role="status"></p>
+        <div class="status-row">
+          <p id="status-line" class="status-line" role="status"></p>
+          <ol id="task-strip" class="task-strip" aria-label="Task progress"></ol>
+        </div>
 
         <!-- The team, at work -->
         <section class="studio" aria-label="The team">
@@ -70,17 +73,31 @@
           <div id="panel-board" class="panel board" role="tabpanel" aria-labelledby="tab-board"></div>
 
           <div id="panel-files" class="panel split" role="tabpanel" aria-labelledby="tab-files" hidden>
-            <ul id="file-list" class="list"></ul>
+            <div class="side">
+              <ul id="file-list" class="list"></ul>
+              <a id="download" class="btn small ghost" href="#" download hidden>Download all (.zip)</a>
+            </div>
             <div class="viewer">
               <div class="viewer-head">
                 <p id="file-title" class="viewer-title"></p>
-                <div class="seg" id="file-mode" hidden>
-                  <button type="button" data-mode="preview" aria-pressed="true">Preview</button>
-                  <button type="button" data-mode="code" aria-pressed="false">Code</button>
+                <div class="tools">
+                  <div class="seg" id="file-mode" hidden>
+                    <button type="button" data-mode="preview" aria-pressed="true">Preview</button>
+                    <button type="button" data-mode="code" aria-pressed="false">Source</button>
+                  </div>
+                  <div class="seg" id="file-width" hidden>
+                    <button type="button" data-width="desktop" aria-pressed="true">Desktop</button>
+                    <button type="button" data-width="phone" aria-pressed="false">Phone</button>
+                  </div>
+                  <a id="open-tab" class="icon-link" href="#" target="_blank" rel="noopener" hidden
+                     title="Open the page in a new tab">Open ↗</a>
                 </div>
               </div>
-              <iframe id="file-frame" class="viewer-frame" title="Preview of the generated page"
-                      sandbox="allow-scripts" hidden></iframe>
+              <div id="frame-stage" class="frame-stage" hidden>
+                <iframe id="file-frame" class="viewer-frame" title="Preview of the generated page"
+                        sandbox="allow-scripts"></iframe>
+              </div>
+              <div id="file-doc" class="viewer-text doc-scroll" tabindex="0" hidden></div>
               <pre id="file-text" class="viewer-text" tabindex="0"></pre>
             </div>
           </div>
@@ -89,7 +106,7 @@
             <ul id="note-list" class="list"></ul>
             <div class="viewer">
               <div class="viewer-head"><p id="note-title" class="viewer-title"></p></div>
-              <pre id="note-text" class="viewer-text" tabindex="0"></pre>
+              <div id="note-text" class="viewer-text doc-scroll" tabindex="0"></div>
             </div>
           </div>
 
@@ -120,6 +137,7 @@
       </aside>
     </div>
   </div>
+  <script src="static/markdown.js"></script>
   <script src="static/app.js"></script>
 </body>
 </html>

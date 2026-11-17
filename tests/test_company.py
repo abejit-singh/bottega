@@ -135,7 +135,7 @@ def test_failures_become_readable_errors(settings: Settings) -> None:
     company.wait(project.id, timeout=30)
 
     assert project.status == "failed"
-    assert project.error == "Authentication failed: set ANTHROPIC_API_KEY in your .env file."
+    assert project.error == "The API key was rejected. Check ANTHROPIC_API_KEY in your .env file."
     assert events[-1]["kind"] == "project_done" and events[-1]["data"]["status"] == "failed"
 
 
@@ -183,3 +183,22 @@ def test_demo_settings_never_touch_real_folders(tmp_path: Path) -> None:
     demo = demo_settings(real)
     assert demo.output_dir != real.output_dir and demo.memory_dir != real.memory_dir
     assert (demo.memory_dir / "Handbook.md").read_text() == "# Handbook"
+
+
+def test_a_blocking_connection_problem_prevents_new_projects(settings: Settings) -> None:
+    company = make(settings)
+    company.connection = {"status": "missing_key", "message": "ANTHROPIC_API_KEY is not set.", "blocking": True}
+    with pytest.raises(ValueError, match="not reachable: ANTHROPIC_API_KEY is not set"):
+        company.start_project(GOAL)
+    assert company.snapshot()["connection"]["status"] == "missing_key"
+
+
+def test_the_connection_check_is_published(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    events: list[dict[str, Any]] = []
+    company = Company(settings, publish=events.append, client_factory=lambda: DemoClient(delay=0))
+    assert company.snapshot()["connection"]["status"] == "checking"
+    company.check_connection()
+    assert events[-1]["kind"] == "connection" and events[-1]["data"]["status"] == "missing_key"
+    assert company.snapshot()["connection"]["blocking"] is True

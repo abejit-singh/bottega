@@ -180,7 +180,7 @@ const state = {
   message: null,         // { text, tone } shown under the goal box
   stopRequested: false,
   // `picked` is true once the user chose a file; until then we show the best one.
-  file: { path: null, picked: false, mode: "preview", stamp: 0, shown: null, content: "" },
+  file: { path: null, picked: false, mode: "preview", width: "desktop", stamp: 0, shown: null, content: "", renderedDoc: null },
   notes: [],
   note: { path: null, title: "", content: "" },
   sseAlive: false,
@@ -230,9 +230,23 @@ function setMeter(meter, fill, ratio) {
 
 let switcherSignature = "";
 
+// The online preview has no server: replay.js stands in for it and defines this helper.
+const PREVIEW_ONLY = typeof window.bottegaPreviewDoc === "function";
+
+const CONNECTION = {
+  demo: "Demo · scripted answers, nothing is billed",
+  preview: "Online preview · a recorded demo run",
+  checking: "Checking Claude…",
+  missing_key: "API key missing",
+  error: "Claude not reachable",
+};
+
 function renderTop() {
-  const { settings, demo, projects } = state.snapshot;
-  $("demo-badge").hidden = !demo;
+  const { settings, projects } = state.snapshot;
+  const connection = state.snapshot.connection ?? { status: "checking" };
+  $("mode-badge").dataset.status = connection.status;
+  $("mode-badge").title = connection.message ?? "";
+  $("mode-text").textContent = CONNECTION[connection.status] ?? `Claude ready · ${settings.model}`;
 
   // The meter shows one ratio against a limit: this project's cost vs its budget.
   const cost = state.detail?.cost_usd ?? 0;
@@ -286,9 +300,11 @@ function describeProject(project) {
 }
 
 function renderCommand() {
-  const { busy } = state.snapshot;
+  const { busy, connection } = state.snapshot;
   if (!busy) state.stopRequested = false;
+  const blocked = Boolean(connection?.blocking);
   $("start").hidden = busy;
+  $("start").disabled = blocked;
   $("stop").hidden = !busy;
   $("stop").disabled = state.stopRequested;
   $("stop").textContent = state.stopRequested ? "Stopping…" : "Stop";
@@ -302,9 +318,26 @@ function renderCommand() {
   }
   goal.dataset.wasBusy = String(busy);
 
-  const status = state.message ?? describeProject(state.detail);
+  const status = state.message
+    ?? (blocked && !busy ? { text: `${connection.message} Then restart Bottega.`, tone: "error" } : null)
+    ?? describeProject(state.detail);
   $("status-line").textContent = status.text;
   $("status-line").dataset.tone = status.tone ?? "info";
+  renderStrip();
+}
+
+const TASK_STATUS = { todo: "to do", in_progress: "in progress", review: "in review", done: "approved", failed: "failed" };
+
+/** One small bar per task, in its owner's color: empty, pulsing, half full, full. */
+function renderStrip() {
+  const tasks = state.detail?.tasks ?? [];
+  $("task-strip").hidden = !tasks.length;
+  $("task-strip").replaceChildren(...tasks.map((task) => {
+    const pip = el("li", { class: "pip", "data-status": task.status,
+      title: `${task.id} · ${task.title} · ${TASK_STATUS[task.status] ?? task.status}` });
+    pip.style.setProperty("--c", `var(--${task.owner})`);
+    return pip;
+  }));
 }
 
 function setMessage(text, tone) {
@@ -491,17 +524,38 @@ function renderFiles() {
     }, el("span", { class: "item-name", text: path })))) :
     [el("li", { class: "empty", text: state.detail ? "No files yet." : "Files the team writes will appear here." })]));
 
+  const project = state.detail;
   const page = isPage(file.path);
-  const showFrame = page && file.mode === "preview";
+  const doc = isDoc(file.path);
+  const preview = file.mode === "preview";
   $("file-title").textContent = file.path ?? "";
-  $("file-mode").hidden = !page;
+  $("file-mode").hidden = !(page || doc);
   for (const button of $("file-mode").children) {
     button.setAttribute("aria-pressed", String(button.dataset.mode === file.mode));
   }
-  $("file-frame").hidden = !showFrame;
-  $("file-text").hidden = showFrame;
-  $("file-text").textContent = file.path ? file.content : "";
+  $("file-width").hidden = !(page && preview);
+  for (const button of $("file-width").children) {
+    button.setAttribute("aria-pressed", String(button.dataset.width === file.width));
+  }
+  $("frame-stage").hidden = !(page && preview);
+  $("frame-stage").dataset.width = file.width;
+  $("open-tab").hidden = !page || PREVIEW_ONLY;
+  if (page && project) $("open-tab").href = previewUrl(project.id, file.path, file.stamp);
+  $("download").hidden = !files.length || PREVIEW_ONLY;
+  if (project) $("download").href = `api/projects/${encodeURIComponent(project.id)}/download`;
+
+  // Re-render a document only when its text changed, so scrolling isn't reset.
+  const text = file.path ? file.content : "";
+  $("file-doc").hidden = !(doc && preview);
+  if (doc && preview && file.renderedDoc !== text) {
+    $("file-doc").replaceChildren(Markdown.render(text));
+    file.renderedDoc = text;
+  }
+  $("file-text").hidden = (page || doc) && preview;
+  if ($("file-text").textContent !== text) $("file-text").textContent = text;
 }
+
+const isDoc = (path) => /\.(md|markdown)$/i.test(path ?? "");
 
 /** The file most worth showing: the web page the client will open, then the
     research, then any other document. The brief is bookkeeping, so it comes last. */
@@ -520,7 +574,9 @@ async function loadFile() {
     const best = bestFile(files);
     if (best !== file.path) { file.path = best; file.mode = "preview"; }
   }
-  const key = file.path ? `${project.id}|${file.path}|${file.stamp}|${file.mode}` : null;
+  // A document needs its text in both modes; a web page only in Source mode.
+  const needsText = !isPage(file.path) || file.mode === "code";
+  const key = file.path ? `${project.id}|${file.path}|${file.stamp}|${needsText ? "text" : "frame"}` : null;
   if (key === file.shown) return;
   file.shown = key;
   if (!file.path) { file.content = ""; renderFiles(); return; }
@@ -561,8 +617,13 @@ function renderMemory() {
       el("span", { class: "item-sub", text: [note.folder || "top level", ...note.tags.slice(0, 3).map((t) => `#${t}`)].join(" · ") })))) :
     [el("li", { class: "empty", text: "The company's memory is empty." })]));
   $("note-title").textContent = state.note.title;
-  $("note-text").textContent = state.note.path ? state.note.content
-    : "What the company remembers across projects. The same folder opens in Obsidian.";
+  const text = state.note.path ? state.note.content : null;
+  if (state.note.rendered !== text) {
+    state.note.rendered = text;
+    $("note-text").replaceChildren(text === null
+      ? el("p", { class: "empty", text: "What the company remembers across projects. The same folder opens in Obsidian." })
+      : Markdown.render(text));
+  }
 }
 
 async function openNote(note) {
@@ -751,6 +812,19 @@ function renderComposer() {
 
 // ------------------------------------------------------------------ events
 
+/** A short reaction from a character: a hop when its work is approved, a
+    shake when QA sends it back. Only for live events, not replayed history. */
+function react(role, kind, event) {
+  if (event.ts < Date.now() / 1000 - 5) return;
+  const station = stations.get(role);
+  if (!station) return;
+  station.node.classList.remove("cheer", "oops");
+  void station.node.offsetWidth;   // restart the animation if it is already running
+  station.node.classList.add(kind);
+  clearTimeout(station.reaction);
+  station.reaction = setTimeout(() => station.node.classList.remove(kind), 1400);
+}
+
 function handleEvent(event) {
   if (event.id <= state.lastEventId) return;   // already seen (replay or polling overlap)
   state.lastEventId = event.id;
@@ -777,6 +851,13 @@ function handleEvent(event) {
       break;
     case "agent_done":
       delete state.bubbles[event.agent];
+      break;
+    case "task":
+      if (d.change === "approved") react(d.task.owner, "cheer", event);
+      if (d.change === "revision") react(d.task.owner, "oops", event);
+      break;
+    case "project_done":
+      if (d.status === "done") for (const role of stations.keys()) react(role, "cheer", event);
       break;
   }
   // "text" and "tool_call" never change the snapshot, only the speech bubbles.
@@ -930,6 +1011,9 @@ async function init() {
   }
   for (const button of $("file-mode").children) {
     button.addEventListener("click", () => { state.file.mode = button.dataset.mode; renderFiles(); loadFile(); });
+  }
+  for (const button of $("file-width").children) {
+    button.addEventListener("click", () => { state.file.width = button.dataset.width; renderFiles(); });
   }
   setFeedFilter("highlights");
 

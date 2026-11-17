@@ -194,6 +194,15 @@ class Agent:
 
     def _call_model(self, messages: list[dict[str, Any]]) -> Any:
         """One call to the Messages API. Returns the final BetaMessage."""
+        request = self.build_request(messages)
+        # Streaming avoids HTTP timeouts on long outputs (an agent writing a big
+        # HTML file). get_final_message() waits and hands us the assembled reply.
+        with self.client.beta.messages.stream(**request) as stream:
+            return stream.get_final_message()
+
+    def build_request(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+        """The exact request this agent sends. Public so `bottega check` can
+        test the real request shape before a project spends anything."""
         request: dict[str, Any] = {
             "model": self.settings.model,
             "max_tokens": self.settings.max_tokens,
@@ -210,11 +219,7 @@ class Agent:
         if self.settings.refusal_fallback:
             request["betas"] = [FALLBACK_BETA]
             request["fallbacks"] = "default"
-
-        # Streaming avoids HTTP timeouts on long outputs (an agent writing a big
-        # HTML file). get_final_message() waits and hands us the assembled reply.
-        with self.client.beta.messages.stream(**request) as stream:
-            return stream.get_final_message()
+        return request
 
     def _run_tool(self, block: Any, ctx: ToolContext) -> dict[str, Any]:
         """Execute one tool_use block and build the matching tool_result block."""

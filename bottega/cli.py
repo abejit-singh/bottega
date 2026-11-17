@@ -4,6 +4,7 @@
     python -m bottega serve --demo        # same, with scripted responses (no key, no cost)
     python -m bottega run "goal"          # the whole team, in the terminal
     python -m bottega run --demo "goal"   # scripted, to see how it works for free
+    python -m bottega check               # is the key, the model and every agent set up right?
     python -m bottega solo researcher "goal"   # one agent alone (handy for tuning a prompt)
 """
 
@@ -189,6 +190,22 @@ def cmd_solo(args: argparse.Namespace, settings: Settings) -> int:
     return 0 if result.completed else 2
 
 
+def cmd_check(args: argparse.Namespace, settings: Settings) -> int:
+    from bottega.check import run_checks
+
+    print(f"Checking Bottega with model {settings.model}…\n")
+    results = run_checks(settings, lambda: anthropic.Anthropic(max_retries=settings.api_retries),
+                         live=args.live)
+    for result in results:
+        print(f"  {'✓' if result.ok else '✕'} {result.name}: {result.detail}")
+    if all(r.ok for r in results):
+        hint = "" if args.live else " Add --live to also send one tiny real request (under a cent)."
+        print(f"\nAll good: the team is ready to work.{hint}")
+        return 0
+    print("\nFix the problem above, then run the check again.", file=sys.stderr)
+    return 1
+
+
 def cmd_serve(args: argparse.Namespace, settings: Settings) -> int:
     # Imported here so `run` and `solo` keep working even if the web extras are missing.
     try:
@@ -202,6 +219,11 @@ def cmd_serve(args: argparse.Namespace, settings: Settings) -> int:
 
     hub = EventHub()
     company = _build_company(args, settings, hub.publish)
+    if not args.demo:
+        import threading
+
+        # Check the connection to Claude in the background; the page shows the result.
+        threading.Thread(target=company.check_connection, name="check", daemon=True).start()
     shown_host = "localhost" if args.host in ("127.0.0.1", "0.0.0.0") else args.host
     print(f"Bottega is open: http://{shown_host}:{args.port}   (Ctrl+C to stop)")
     uvicorn.run(create_app(company, hub), host=args.host, port=args.port,
@@ -226,6 +248,11 @@ def build_parser() -> argparse.ArgumentParser:
                        help="address to listen on (default: this computer only)")
     serve.add_argument("--port", type=int, default=8000)
     serve.set_defaults(func=cmd_serve)
+
+    check = sub.add_parser("check", help="check the API key, the model and every agent's setup")
+    check.add_argument("--live", action="store_true",
+                       help="also send one tiny real request (costs under a cent)")
+    check.set_defaults(func=cmd_check)
 
     solo = sub.add_parser("solo", help="run one agent alone on a goal (no task board)")
     solo.add_argument("role", choices=WORKER_ROLES, help="which agent to run")

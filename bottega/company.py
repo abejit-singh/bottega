@@ -18,6 +18,7 @@ Design decisions:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import threading
@@ -118,6 +119,12 @@ class Company:
         )
         self._lock = threading.Lock()
         self._projects: dict[str, Project] = {}  # dicts keep insertion order: oldest first
+        self.connection: dict[str, Any]
+        # Is Claude reachable? Filled in by check_connection(); demo needs no check.
+        if demo:
+            self.connection = {"status": "demo", "message": "Demo mode: scripted answers.", "blocking": False}
+        else:
+            self.connection = {"status": "checking", "message": "Checking the connection…", "blocking": False}
         self._load_history()
 
     # ---------------------------------------------------------------- commands
@@ -127,6 +134,8 @@ class Company:
         goal = goal.strip()
         if not goal:
             raise ValueError("The goal must not be empty.")
+        if self.connection.get("blocking"):
+            raise ValueError(f"Claude is not reachable: {self.connection['message']}")
 
         with self._lock:
             if any(p.status == "running" for p in self._projects.values()):
@@ -148,6 +157,16 @@ class Company:
         )
         project.thread.start()
         return project
+
+    def check_connection(self) -> None:
+        """Run the free preflight check (see check.py) and publish the result.
+        Called once in the background when the dashboard starts."""
+        from bottega.check import run_checks, summarize  # imported here: check imports agents
+
+        results = run_checks(self.settings, self._client_factory, roles=("ceo",))
+        self.connection = summarize(results)
+        self._publish({"project_id": None, "agent": "Bottega", "kind": "connection",
+                       "data": dict(self.connection), "ts": time.time()})
 
     def stop_project(self, project_id: str) -> bool:
         """Ask a running project to stop. Returns False if there is nothing to stop."""
@@ -235,6 +254,7 @@ class Company:
                 "output_tokens": sum(a["output_tokens"] for a in agents),
             },
             "memory_notes": len(self.memory.list_notes()),
+            "connection": dict(self.connection),
         }
 
     # ---------------------------------------------------------------- internals
@@ -334,10 +354,9 @@ class Company:
                 )
                 if meta["status"] == "running":
                     project.error = "Interrupted: Bottega was closed while this project was running."
-                try:
+                # If this fails, the project stopped before any state was saved.
+                with contextlib.suppress(SandboxError, ValueError, KeyError):
                     project.state = ProjectState.load(workspace, self.settings.max_revisions)
-                except (SandboxError, ValueError, KeyError):
-                    pass  # the project stopped before any state was saved
                 loaded.append(project)
             except (SandboxError, ValueError, KeyError, TypeError, OSError):
                 continue  # not a Bottega project folder (or a damaged one): skip it

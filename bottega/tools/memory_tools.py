@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from bottega.memory import FOLDERS, MemoryVault
-from bottega.tools.base import Tool, ToolContext, ToolError
 from bottega.sandbox import SandboxError
+from bottega.tools.base import Tool, ToolContext, ToolError
 
 
 def _vault(ctx: ToolContext) -> MemoryVault:
