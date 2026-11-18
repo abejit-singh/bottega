@@ -18,8 +18,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+      - name: Install Bottega (also checks that the package builds)
+        run: pip install -e ".[dev]"
       - name: Lint
         run: ruff check bottega tests
       - name: Test

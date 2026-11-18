@@ -1,3 +1,3 @@
-"""Bottega: a company run entirely by AI agents built on the Claude API."""
+"""Bottega: a small studio run entirely by AI agents built on the Claude API."""
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"

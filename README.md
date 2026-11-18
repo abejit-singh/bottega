@@ -105,7 +105,7 @@ Before every call the loop checks the **Stop button** and the **budget**, and af
 
 ### The dashboard
 
-`python -m bottega serve` opens a local page where you can:
+`bottega serve` opens a local page where you can:
 
 - **see the agents**: each has a character, a color and a speech bubble that says what it is doing ("Writing design.md", "Sending it back"), and its tool moves while it works;
 - **give orders**: start a project, message the team while it works, stop it;
@@ -136,29 +136,31 @@ Requires **Python 3.11+**. For real runs you also need an [Anthropic API key](ht
 git clone https://github.com/abejit-singh/bottega.git
 cd bottega
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"     # installs Bottega and adds the `bottega` command
 cp .env.example .env        # then put your key in .env (it is git-ignored)
 ```
+
+Run the commands below from the project folder: projects are saved in `output/` and the company memory lives in `memory/`. `python -m bottega …` works the same as `bottega …`.
 
 **Try it for free first.** Demo mode replaces Claude with a script but runs everything else for real: the orchestrator, the board, the tools, the QA loop and the dashboard.
 
 ```bash
-python -m bottega serve --demo     # then open http://localhost:8000
+bottega serve --demo     # then open http://localhost:8000
 ```
 
 **Check that everything is ready** before the first real run. It is free: it uses the token-counting endpoint, which generates nothing.
 
 ```bash
-python -m bottega check            # API key, model, and every agent's prompt and tools
-python -m bottega check --live     # plus one tiny real request (under a cent)
+bottega check            # API key, model, and every agent's prompt and tools
+bottega check --live     # plus one tiny real request (under a cent)
 ```
 
 **Run the real team:**
 
 ```bash
-python -m bottega serve                                                  # dashboard
-python -m bottega run "A landing page for a pizzeria in Mantova, Italy"  # terminal
-python -m bottega solo researcher "…"                                    # one agent alone, to tune a prompt
+bottega serve                                                  # dashboard
+bottega run "A landing page for a pizzeria in Mantova, Italy"  # terminal
+bottega solo researcher "…"                                    # one agent alone, to tune a prompt
 ```
 
 Each project is saved in `output/<project_id>/`. Open `site/index.html` in a browser to see the website the team built.
@@ -193,7 +195,7 @@ All settings live in `.env` (see [`.env.example`](.env.example)):
 
 ## Example output
 
-From `python -m bottega run --demo "A landing page for a pizzeria in Mantova, Italy"`. In demo mode the files are placeholders and the costs are simulated, but the flow is the real one, including QA sending the website back once:
+From `bottega run --demo "A landing page for a pizzeria in Mantova, Italy"`. In demo mode the files are placeholders and the costs are simulated, but the flow is the real one, including QA sending the website back once:
 
 ```
 [CEO] 📌 new task: T1 Research the business and its audience
@@ -224,8 +226,6 @@ Task board:
   T5 [done] Outreach email and social posts (marketer)
 ```
 
-<!-- TODO: add the output of a real run, and a screenshot of the website the team built -->
-
 ---
 
 ## Project layout
@@ -233,7 +233,7 @@ Task board:
 ```
 bottega/
 ├── bottega/
-│   ├── cli.py              # python -m bottega serve | run | solo
+│   ├── cli.py              # bottega serve | run | check | solo
 │   ├── config.py           # typed settings from .env
 │   ├── team.py             # the six seats: names, titles, who can own tasks
 │   ├── company.py          # Company: runs projects in the background, keeps history
@@ -309,17 +309,21 @@ bottega/
 
 ---
 
-## What I learned
+## Lessons from the build
 
-<!-- Write this section yourself, in your own words. Admissions readers value
-     specific, honest reflection over polish. Some prompts:
-     - What surprised you about how tool use actually works?
-     - Why does the orchestrator stay plain code instead of another agent?
-     - A bug you hit and how you tracked it down
-     - Why the sandbox and least privilege matter (what could go wrong without them?)
-     - What you would do differently, or build next -->
+Real problems met while building Bottega, and what they taught:
 
-- …
+- **Enforce the rules in code, not only in the prompt.** QA is told that on the final review it must approve. In the tests a reviewer that ignores this keeps answering "revise", and the board refuses the move. A model that doesn't follow an instruction can't break the workflow.
+- **Passing tests are not the same as a working screen.** All the tests were green while the dashboard showed the word "null" on the board: `replaceChildren(null)` turns `null` into text. Only a screenshot caught it, so every interface change now gets looked at in a real browser.
+- **Re-rendering can restart animations.** The board is rebuilt on every update. A fade-in on its cards made them flicker while the team worked, so elements that are re-created get no entry animation.
+- **A good default has to keep updating.** The Files tab opened `project_brief.json` instead of the website, because the brief is written first and the first file won. Now the tab follows the most useful file until you pick one yourself.
+- **Layers keep imports clean.** The memory needed the sandbox and the tools needed the memory, which made a circular import. Moving the sandbox into its own module, that depends on nothing, fixed it.
+- **Threads and async need one bridge.** Agents run in threads while the web server is async. Events cross over in a single place (`EventHub.publish` with `call_soon_threadsafe`) instead of everywhere.
+- **Stop between steps, never in the middle of one.** The Stop button and the budget are checked before each model call, so a file an agent was writing is never left half-written.
+- **A scripted stand-in pays for itself.** Because the demo client plays all six agents, 112 tests exercise the real orchestrator in three seconds, for free. Most of the bugs they caught were in the plumbing, not in the model.
+
+<!-- Add your own "What I learned" here, in your own words: what surprised you, a bug you
+     tracked down yourself, what you would build next. Admissions readers look for your voice. -->
 
 ---
 
