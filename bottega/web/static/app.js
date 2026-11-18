@@ -83,6 +83,7 @@ const BODY = `
     <rect class="arm arm-r" x="83" y="70" width="11" height="27" rx="5.5"/>
     <rect class="torso" x="36" y="63" width="48" height="45" rx="16"/>
     HEAD
+    <ellipse class="shine" cx="46" cy="25" rx="8" ry="3.6" transform="rotate(-16 46 25)"/>
     <rect class="visor" x="40" y="31" width="40" height="22" rx="11"/>
     <circle class="eye" cx="52" cy="42" r="3.6"/>
     <circle class="eye" cx="68" cy="42" r="3.6"/>
@@ -95,7 +96,7 @@ const CHARACTERS = {
     head: `<rect class="skin" x="32" y="18" width="56" height="48" rx="13"/>`,
     extras: `<line class="stem" x1="60" y1="18" x2="60" y2="10"/>
       <g transform="rotate(45 60 5)"><rect class="light gem" x="56" y="1" width="8" height="8" rx="1.5"/></g>
-      <path class="light" d="M60 66l-5 5 5 17 5-17z"/>`,
+      <path class="light tie" d="M60 66l-5 5 5 17 5-17z"/>`,
   },
   // The Researcher: a round head, glasses and a magnifying glass.
   researcher: {
@@ -132,18 +133,36 @@ const CHARACTERS = {
   qa: {
     head: `<path class="skin" d="M47 21h26l12 12v18l-12 12H47L35 51V33z"/>`,
     extras: `<circle class="monocle" cx="68" cy="42" r="8"/>
-      <rect class="light" x="43" y="80" width="34" height="29" rx="5"/>
+      <rect class="light board" x="43" y="80" width="34" height="29" rx="5"/>
       <rect class="clip" x="54" y="77" width="12" height="6" rx="2"/>
       <path class="check" d="M51 95l6 6 12-13"/>`,
   },
 };
 
-function drawCharacter(role) {
+function drawCharacter(role, { avatar = false } = {}) {
   const parts = CHARACTERS[role] ?? CHARACTERS.ceo;
   const holder = document.createElement("template");
-  holder.innerHTML = `<svg class="char" viewBox="0 0 120 120" aria-hidden="true">${
+  // An avatar is the same drawing, framed on the head and shoulders.
+  const frame = avatar ? 'class="face" viewBox="22 2 76 76"' : 'class="char" viewBox="0 0 120 120"';
+  holder.innerHTML = `<svg ${frame} aria-hidden="true">${
     BODY.replace("HEAD", parts.head).replace("EXTRAS", parts.extras)}</svg>`;
   return holder.content.firstElementChild;
+}
+
+const ROLE_BY_TITLE = { CEO: "ceo", Researcher: "researcher", Designer: "designer", Developer: "developer", Marketer: "marketer", QA: "qa" };
+
+/** A small round portrait: an agent's face, or a monogram for Bottega and for you. */
+function avatar(who, size = "") {
+  const role = ROLE_BY_TITLE[who] ?? who;
+  const node = el("span", { class: `av ${size}`.trim(), "aria-hidden": "true" });
+  if (CHARACTERS[role]) {
+    node.style.setProperty("--c", `var(--${role})`);
+    node.append(drawCharacter(role, { avatar: true }));
+  } else {
+    node.classList.add("mono");
+    node.textContent = who === "Founder" ? "You" : "B";
+  }
+  return node;
 }
 
 // What the speech bubble says while an agent uses a tool.
@@ -359,8 +378,10 @@ function buildStation(agent, index) {
     title: `${agent.description} Click to see only the ${agent.title}'s activity.`,
     onclick: () => setAgentFilter(state.agentFilter === agent.title ? null : agent.title),
   },
+    el("span", { class: "spot", "aria-hidden": "true" }),
     el("span", { class: "bubble" }, el("span", {}, bubbleText)),
     drawCharacter(agent.name),
+    el("span", { class: "stand", "aria-hidden": "true" }),
     el("span", { class: "name", text: agent.title }),
     caption,
   );
@@ -444,7 +465,7 @@ function taskCard(task) {
   },
     el("span", { class: "card-top" },
       el("span", { class: "card-id", text: task.id }),
-      el("span", { class: "owner" }, el("i", { "aria-hidden": "true" }), document.createTextNode(owner?.title ?? task.owner))),
+      el("span", { class: "owner" }, avatar(task.owner, "xs"), document.createTextNode(owner?.title ?? task.owner))),
     el("span", { class: "card-title", text: task.title }),
     meta.length ? el("span", { class: "card-meta" }, ...meta) : null,
     more,
@@ -670,7 +691,7 @@ function renderCosts() {
   for (const { agent, spend } of rows) {
     const cost = spend?.cost_usd ?? 0;
     const tokens = spend ? spend.input_tokens + spend.output_tokens + spend.cache_read_tokens + spend.cache_write_tokens : 0;
-    const name = el("span", { class: "cost-name" }, el("i", { "aria-hidden": "true" }), document.createTextNode(agent.title));
+    const name = el("span", { class: "cost-name" }, avatar(agent.name, "sm"), document.createTextNode(agent.title));
     const bar = el("div", { class: "cost-bar" }, el("div"));
     bar.firstChild.style.width = `${(cost / top) * 100}%`;
     bar.firstChild.hidden = !cost;
@@ -771,7 +792,7 @@ function appendFeed(event) {
     class: "row", "data-kind": event.kind, "data-level": info.level,
     "data-agent": event.agent, "data-tone": info.tone ?? null,
   },
-    el("span", { class: "mark", "aria-hidden": "true" }),
+    avatar(event.agent),
     el("div", {},
       el("p", { class: "row-head" }, el("b", { text: who }), el("time", { text: fmtTime(event.ts) })),
       text));
@@ -808,6 +829,46 @@ function renderComposer() {
   $("message").disabled = !running;
   $("send").disabled = !running;
   $("message").placeholder = running ? "Tell the team something…" : "Opens while the team works";
+}
+
+// ------------------------------------------------------------- handoffs
+// When work changes hands, a sheet of paper flies between the two agents:
+// the CEO hands out a task, the owner hands it to QA, QA approves it or sends
+// it back. It is the board's story told with the characters themselves.
+
+const REDUCED_MOTION = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
+function fly(fromRole, toRole, colorRole, mark = "") {
+  const from = stations.get(fromRole)?.node.querySelector(".char");
+  const to = stations.get(toRole)?.node.querySelector(".char");
+  if (REDUCED_MOTION || !from || !to || fromRole === toRole || typeof document.body.animate !== "function") return;
+  const a = from.getBoundingClientRect();
+  const b = to.getBoundingClientRect();
+  if (!a.width || !b.width) return;   // the studio is not on screen
+  const sheet = el("span", { class: "sheet", "aria-hidden": "true" }, el("i"), el("i"), el("i"));
+  if (mark) sheet.append(el("b", { text: mark }));
+  sheet.style.setProperty("--c", `var(--${colorRole})`);
+  document.body.append(sheet);
+  const x0 = a.left + a.width / 2 - 11;
+  const y0 = a.top + a.height * 0.45;
+  const x1 = b.left + b.width / 2 - 11;
+  const y1 = b.top + b.height * 0.45;
+  const lift = Math.min(90, 40 + Math.abs(x1 - x0) / 6);
+  sheet.animate([
+    { transform: `translate(${x0}px, ${y0}px) scale(0.5) rotate(-8deg)`, opacity: 0 },
+    { transform: `translate(${x0}px, ${y0 - 26}px) scale(1) rotate(-4deg)`, opacity: 1, offset: 0.18 },
+    { transform: `translate(${(x0 + x1) / 2}px, ${Math.min(y0, y1) - lift}px) scale(1.05) rotate(6deg)`, opacity: 1, offset: 0.55 },
+    { transform: `translate(${x1}px, ${y1 - 10}px) scale(0.85) rotate(0deg)`, opacity: 1, offset: 0.9 },
+    { transform: `translate(${x1}px, ${y1}px) scale(0.4)`, opacity: 0 },
+  ], { duration: 1150, easing: "cubic-bezier(.45,.05,.35,1)" }).finished.finally(() => sheet.remove());
+}
+
+function flyForTaskChange(change, task, event) {
+  if (event.ts < Date.now() / 1000 - 5) return;   // only live events, not replayed history
+  if (change === "created") fly("ceo", task.owner, task.owner);
+  else if (change === "submitted") fly(task.owner, "qa", task.owner);
+  else if (change === "approved") fly("qa", task.owner, task.owner, "✓");
+  else if (change === "revision") fly("qa", task.owner, task.owner, "↩");
 }
 
 // ------------------------------------------------------------------ events
@@ -853,8 +914,10 @@ function handleEvent(event) {
       delete state.bubbles[event.agent];
       break;
     case "task":
-      if (d.change === "approved") react(d.task.owner, "cheer", event);
-      if (d.change === "revision") react(d.task.owner, "oops", event);
+      flyForTaskChange(d.change, d.task, event);
+      // The reaction lands as the sheet arrives.
+      if (d.change === "approved") setTimeout(() => react(d.task.owner, "cheer", event), REDUCED_MOTION ? 0 : 1000);
+      if (d.change === "revision") setTimeout(() => react(d.task.owner, "oops", event), REDUCED_MOTION ? 0 : 1000);
       break;
     case "project_done":
       if (d.status === "done") for (const role of stations.keys()) react(role, "cheer", event);
